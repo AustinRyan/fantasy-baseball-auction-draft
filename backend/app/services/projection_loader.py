@@ -239,8 +239,12 @@ def load_persisted_projections():
         from ..config import league_config
         calculate_all_sgp(_players, league_config)
         calculate_dollar_values(_players, league_config)
-        from .breakout_predictor import calculate_all_breakouts
-        calculate_all_breakouts(_players)
+        # Load Statcast data and calculate breakouts
+        statcast_loaded = load_persisted_statcast()
+        if not statcast_loaded:
+            # Still calculate breakouts (from any inline data in projection CSVs)
+            from .breakout_predictor import calculate_all_breakouts
+            calculate_all_breakouts(_players)
     return loaded
 
 
@@ -467,14 +471,55 @@ def _normalize_name(name: str) -> str:
     return name
 
 
+_STATCAST_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "data" / "statcast"
+
+
+def _save_statcast_to_disk(csv_content: bytes, player_type: str, original_filename: str):
+    """Persist raw Statcast CSV to data/statcast/ for reload on restart."""
+    _STATCAST_DIR.mkdir(parents=True, exist_ok=True)
+    safe_name = "".join(c for c in original_filename if c.isalnum() or c in ".-_ ").strip()
+    if not safe_name:
+        safe_name = "upload"
+    save_name = f"{player_type}_{safe_name}"
+    if not save_name.endswith(".csv"):
+        save_name += ".csv"
+    (_STATCAST_DIR / save_name).write_bytes(csv_content)
+    return save_name
+
+
+def load_persisted_statcast():
+    """Load all saved Statcast CSV files from disk. Called after projections are loaded."""
+    _STATCAST_DIR.mkdir(parents=True, exist_ok=True)
+    loaded = 0
+    for f in sorted(_STATCAST_DIR.glob("*.csv")):
+        parts = f.stem.split("_", 1)
+        player_type = parts[0] if parts[0] in ("hitter", "pitcher") else "hitter"
+        try:
+            content = f.read_bytes()
+            result = merge_statcast_csv(content, player_type=player_type, _persist=False)
+            loaded += result["matched"]
+            logger.info(f"Loaded {result['matched']} Statcast matches from {f.name}")
+        except Exception as e:
+            logger.warning(f"Failed to load Statcast {f.name}: {e}")
+    if loaded:
+        logger.info(f"Total: {loaded} Statcast records merged")
+    return loaded
+
+
 def merge_statcast_csv(
     csv_content: bytes,
     player_type: str = "hitter",
+    _persist: bool = True,
+    _filename: str = "upload.csv",
 ) -> dict:
     """Merge Statcast/advanced CSV data into existing players by name matching.
 
     Returns dict with match stats.
     """
+    # Save raw CSV to disk for persistence
+    if _persist:
+        _save_statcast_to_disk(csv_content, player_type, _filename)
+
     df = pd.read_csv(io.BytesIO(csv_content))
 
     col_map = STATCAST_HITTER_MAP if player_type == "hitter" else STATCAST_PITCHER_MAP

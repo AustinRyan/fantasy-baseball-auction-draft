@@ -47,7 +47,7 @@ async def upload_statcast(
         raise HTTPException(status_code=400, detail="Upload projections first before adding Statcast data")
     content = await file.read()
     try:
-        result = merge_statcast_csv(content, player_type=player_type)
+        result = merge_statcast_csv(content, player_type=player_type, _filename=file.filename or "upload.csv")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {

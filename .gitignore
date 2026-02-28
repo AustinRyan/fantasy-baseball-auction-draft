@@ -6,9 +6,7 @@ backend/venv/
 backend/.venv/
 .env
 
-# Data files (user-specific)
-backend/data/projections/*.csv
-backend/data/projections/*.json
+# Draft state (session-specific, not shared)
 backend/data/draft_state/*.json
 
 # Node
