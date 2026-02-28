@@ -1,0 +1,582 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ============================
+   THE WAR ROOM — Design System
+   ============================ */
+
+@theme {
+  /* Dark palette (default) */
+  --color-void: #060a14;
+  --color-dugout: #0b1120;
+  --color-surface: #111b2e;
+  --color-panel: #162033;
+  --color-elevated: #1c2844;
+  --color-border: #1e2d4a;
+  --color-border-bright: #2a3f6b;
+
+  /* Text */
+  --color-text-primary: #e8edf5;
+  --color-text-secondary: #8899b4;
+  --color-text-muted: #4a5f82;
+
+  /* Accent: Stadium Gold */
+  --color-gold: #f5a623;
+  --color-gold-dim: #c4841a;
+  --color-gold-glow: #f5a62333;
+
+  /* Position colors */
+  --color-pos-c: #eab308;
+  --color-pos-if: #3b82f6;
+  --color-pos-of: #10b981;
+  --color-pos-u: #8b5cf6;
+  --color-pos-sp: #ef4444;
+  --color-pos-rp: #f97316;
+
+  /* Signals */
+  --color-steal: #10b981;
+  --color-value: #06b6d4;
+  --color-fair: #64748b;
+  --color-overpay: #f97316;
+  --color-big-overpay: #ef4444;
+
+  /* Typography */
+  --font-display: "Bebas Neue", sans-serif;
+  --font-body: "Outfit", system-ui, sans-serif;
+  --font-mono: "Space Mono", monospace;
+}
+
+/* ============================
+   Dark / Light Theme Variables
+   ============================ */
+
+:root {
+  /* Dark mode is default */
+  --bg-body: var(--color-void);
+  --bg-card: var(--color-surface);
+  --bg-card-header: var(--color-dugout);
+  --bg-input: var(--color-dugout);
+  --bg-elevated: var(--color-elevated);
+  --bg-chip: var(--color-elevated);
+  --bg-scrollbar: var(--color-border);
+  --border-card: var(--color-border);
+  --border-input: var(--color-border);
+  --border-bright: var(--color-border-bright);
+  --text-primary: var(--color-text-primary);
+  --text-secondary: var(--color-text-secondary);
+  --text-muted: var(--color-text-muted);
+  --accent: var(--color-gold);
+  --accent-dim: var(--color-gold-dim);
+  --accent-glow: var(--color-gold-glow);
+  --select-bg: var(--color-void);
+  --select-color: var(--color-text-primary);
+  --diamond-stroke: %231e2d4a;
+}
+
+:root.light {
+  /* Override Tailwind @theme colors for light mode */
+  --color-void: #f4f5f7;
+  --color-dugout: #f8f9fb;
+  --color-surface: #ffffff;
+  --color-panel: #ffffff;
+  --color-elevated: #e8ebf0;
+  --color-border: #d4d9e2;
+  --color-border-bright: #b0b8c8;
+
+  --color-text-primary: #111827;
+  --color-text-secondary: #4b5563;
+  --color-text-muted: #9ca3af;
+
+  --color-gold: #d4911a;
+  --color-gold-dim: #b07815;
+  --color-gold-glow: #d4911a22;
+
+  /* Custom vars */
+  --bg-body: #f4f5f7;
+  --bg-card: #ffffff;
+  --bg-card-header: #f8f9fb;
+  --bg-input: #f0f2f5;
+  --bg-elevated: #e8ebf0;
+  --bg-chip: #e8ebf0;
+  --bg-scrollbar: #c8cdd6;
+  --border-card: #d4d9e2;
+  --border-input: #d4d9e2;
+  --border-bright: #b0b8c8;
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #9ca3af;
+  --accent: #d4911a;
+  --accent-dim: #b07815;
+  --accent-glow: #d4911a22;
+  --select-bg: #ffffff;
+  --select-color: #111827;
+  --diamond-stroke: %23d4d9e2;
+
+  /* Signal colors - darker for readability on white */
+  --color-steal: #059669;
+  --color-value: #0891b2;
+  --color-overpay: #ea580c;
+  --color-big-overpay: #dc2626;
+
+  /* Position colors - darker for light backgrounds */
+  --color-pos-c: #a16207;
+  --color-pos-if: #2563eb;
+  --color-pos-of: #059669;
+  --color-pos-u: #7c3aed;
+  --color-pos-sp: #dc2626;
+  --color-pos-rp: #ea580c;
+}
+
+/* Base */
+body {
+  font-family: var(--font-body);
+  background-color: var(--bg-body);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-scrollbar);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-bright);
+}
+
+/* Selection */
+::selection {
+  background: var(--accent);
+  color: var(--bg-body);
+}
+
+/* ============================
+   Utility Classes
+   ============================ */
+
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: 0.05em;
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* War Room card */
+.wr-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.wr-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-dim) 50%, transparent);
+  opacity: 0.3;
+}
+
+.wr-card-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-card);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-card-header);
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.wr-card-body {
+  padding: 14px 18px;
+}
+
+/* Section title */
+.wr-title {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  letter-spacing: 0.08em;
+  color: var(--text-primary);
+  text-transform: uppercase;
+}
+
+/* Gold accent line */
+.wr-accent-line {
+  width: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Input styling */
+.wr-input {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.wr-input:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.wr-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Select */
+.wr-select {
+  appearance: none;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  padding: 8px 32px 8px 12px;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%234a5f82' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.wr-select:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+
+.wr-select option {
+  background: var(--select-bg);
+  color: var(--select-color);
+}
+
+/* Button base */
+.wr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-family: var(--font-body);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: none;
+}
+
+.wr-btn-gold {
+  background: var(--accent);
+  color: var(--bg-body);
+}
+.wr-btn-gold:hover:not(:disabled) {
+  background: #fbbf24;
+  box-shadow: 0 0 20px var(--accent-glow);
+}
+.wr-btn-gold:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.wr-btn-surface {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-card);
+}
+.wr-btn-surface:hover:not(:disabled) {
+  background: var(--border-card);
+  color: var(--text-primary);
+}
+
+.wr-btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+}
+.wr-btn-ghost:hover {
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+}
+
+.wr-btn-danger {
+  background: transparent;
+  color: var(--color-big-overpay);
+  border: 1px solid #ef444433;
+}
+.wr-btn-danger:hover {
+  background: #ef444415;
+}
+
+/* Chip / pill toggle */
+.wr-chip {
+  padding: 5px 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+  background: var(--bg-chip);
+  color: var(--text-muted);
+}
+
+.wr-chip:hover {
+  color: var(--text-secondary);
+  border-color: var(--border-bright);
+}
+
+.wr-chip-active {
+  background: var(--accent);
+  color: var(--bg-body);
+  font-weight: 600;
+  border-color: var(--accent);
+}
+
+.wr-chip-active:hover {
+  background: #fbbf24;
+  color: var(--bg-body);
+  border-color: #fbbf24;
+}
+
+/* Table */
+.wr-table {
+  width: 100%;
+  font-size: 0.8125rem;
+  border-collapse: collapse;
+}
+
+.wr-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.wr-table th {
+  background: var(--bg-card-header);
+  padding: 8px 14px;
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-card);
+  white-space: nowrap;
+  user-select: none;
+  transition: background 0.2s;
+}
+
+.wr-table th.sortable {
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.wr-table th.sortable:hover {
+  color: var(--accent);
+}
+
+.wr-table td {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-card);
+  white-space: nowrap;
+  transition: border-color 0.2s;
+}
+
+.wr-table tbody tr {
+  transition: background 0.1s;
+}
+
+.wr-table tbody tr:hover {
+  background: var(--bg-elevated);
+}
+
+.wr-table tbody tr.active {
+  background: var(--accent-glow);
+}
+
+/* Drafted row styling */
+.wr-table tbody tr.drafted-row {
+  background: transparent;
+}
+.wr-table tbody tr.drafted-row:hover {
+  background: var(--bg-elevated);
+}
+
+/* Position badge */
+.pos-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  padding: 2px 6px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  border-radius: 3px;
+  letter-spacing: 0.02em;
+}
+
+.pos-c { background: color-mix(in srgb, var(--color-pos-c) 15%, transparent); color: var(--color-pos-c); }
+.pos-1b, .pos-2b, .pos-3b, .pos-ss, .pos-mi, .pos-ci { background: color-mix(in srgb, var(--color-pos-if) 15%, transparent); color: var(--color-pos-if); }
+.pos-of { background: color-mix(in srgb, var(--color-pos-of) 15%, transparent); color: var(--color-pos-of); }
+.pos-u, .pos-dh { background: color-mix(in srgb, var(--color-pos-u) 15%, transparent); color: var(--color-pos-u); }
+.pos-sp { background: color-mix(in srgb, var(--color-pos-sp) 15%, transparent); color: var(--color-pos-sp); }
+.pos-rp { background: color-mix(in srgb, var(--color-pos-rp) 15%, transparent); color: var(--color-pos-rp); }
+.pos-p { background: color-mix(in srgb, var(--color-pos-sp) 15%, transparent); color: var(--color-pos-sp); }
+
+/* Signal badges */
+.signal-steal { background: color-mix(in srgb, var(--color-steal) 12%, transparent); color: var(--color-steal); border: 1px solid color-mix(in srgb, var(--color-steal) 25%, transparent); }
+.signal-value { background: color-mix(in srgb, var(--color-value) 12%, transparent); color: var(--color-value); border: 1px solid color-mix(in srgb, var(--color-value) 25%, transparent); }
+.signal-fair { background: color-mix(in srgb, var(--color-fair) 12%, transparent); color: var(--color-text-secondary); border: 1px solid color-mix(in srgb, var(--color-fair) 25%, transparent); }
+.signal-overpay { background: color-mix(in srgb, var(--color-overpay) 12%, transparent); color: var(--color-overpay); border: 1px solid color-mix(in srgb, var(--color-overpay) 25%, transparent); }
+.signal-big-overpay { background: color-mix(in srgb, var(--color-big-overpay) 12%, transparent); color: var(--color-big-overpay); border: 1px solid color-mix(in srgb, var(--color-big-overpay) 25%, transparent); }
+
+/* Breakout badge */
+.breakout-positive { background: color-mix(in srgb, var(--color-steal) 10%, transparent); color: var(--color-steal); border: 1px solid color-mix(in srgb, var(--color-steal) 20%, transparent); }
+.breakout-negative { background: color-mix(in srgb, var(--color-big-overpay) 10%, transparent); color: var(--color-big-overpay); border: 1px solid color-mix(in srgb, var(--color-big-overpay) 20%, transparent); }
+
+/* Price range bar */
+.price-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-card);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Draft active pulse */
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-steal);
+  animation: live-pulse 2s ease-in-out infinite;
+  box-shadow: 0 0 8px #10b98160;
+}
+
+/* Stagger entrance */
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-enter {
+  animation: slide-up 0.35s ease-out both;
+}
+
+/* Toast */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.animate-toast {
+  animation: toast-in 0.25s ease-out both;
+}
+
+/* Background grid */
+.bg-grid {
+  background-image:
+    linear-gradient(var(--border-card) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-card) 1px, transparent 1px);
+  background-size: 60px 60px;
+  opacity: 0.15;
+}
+
+/* Diamond pattern overlay */
+.dark .bg-diamond {
+  background-image: url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M20 0L40 20L20 40L0 20z' fill='none' stroke='%231e2d4a' stroke-width='0.5'/%3E%3C/svg%3E");
+  background-size: 40px 40px;
+}
+
+:root.light .bg-diamond {
+  background-image: url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M20 0L40 20L20 40L0 20z' fill='none' stroke='%23d4d9e2' stroke-width='0.5'/%3E%3C/svg%3E");
+  background-size: 40px 40px;
+}
+
+/* Glow effect on hover */
+.glow-gold:hover {
+  box-shadow: 0 0 24px -4px var(--accent-glow);
+}
+
+/* Number highlight */
+.dollar {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.dollar-positive {
+  color: var(--color-steal);
+}
+
+.dollar-negative {
+  color: var(--color-big-overpay);
+}
+
+/* Radio inputs */
+input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+/* Tab underline effect */
+.tab-active {
+  position: relative;
+}
+
+.tab-active::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+/* Drafted player name tag */
+.drafted-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 2px;
+  text-decoration: none;
+  background: color-mix(in srgb, var(--color-big-overpay) 12%, transparent);
+  color: var(--color-big-overpay);
+  border: 1px solid color-mix(in srgb, var(--color-big-overpay) 25%, transparent);
+}

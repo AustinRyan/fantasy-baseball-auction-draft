@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+backend/venv/
+backend/.venv/
+.env
+
+# Data files (user-specific)
+backend/data/projections/*.csv
+backend/data/projections/*.json
+backend/data/draft_state/*.json
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
