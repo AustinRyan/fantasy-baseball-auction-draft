@@ -178,11 +178,11 @@ def clear_players(delete_files: bool = False):
 
 
 def list_saved_files() -> list[dict]:
-    """List all saved projection CSV files."""
-    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    """List all saved projection and Statcast CSV files."""
     files = []
+    # Projection files
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
     for f in sorted(_DATA_DIR.glob("*.csv")):
-        # Filename format: hitting_filename.csv or pitching_filename.csv
         parts = f.stem.split("_", 1)
         file_type = parts[0] if parts[0] in ("hitting", "pitching") else "unknown"
         files.append({
@@ -190,13 +190,30 @@ def list_saved_files() -> list[dict]:
             "file_type": file_type,
             "original_name": parts[1] if len(parts) > 1 else f.stem,
             "size_kb": round(f.stat().st_size / 1024, 1),
+            "category": "projection",
+        })
+    # Statcast files
+    _STATCAST_DIR.mkdir(parents=True, exist_ok=True)
+    for f in sorted(_STATCAST_DIR.glob("*.csv")):
+        parts = f.stem.split("_", 1)
+        player_type = parts[0] if parts[0] in ("hitter", "pitcher") else "unknown"
+        files.append({
+            "filename": f"statcast/{f.name}",
+            "file_type": player_type,
+            "original_name": parts[1] if len(parts) > 1 else f.stem,
+            "size_kb": round(f.stat().st_size / 1024, 1),
+            "category": "statcast",
         })
     return files
 
 
 def delete_saved_file(filename: str) -> bool:
-    """Delete a specific saved projection file."""
-    filepath = _DATA_DIR / filename
+    """Delete a specific saved projection or Statcast file."""
+    # Handle statcast/ prefix
+    if filename.startswith("statcast/"):
+        filepath = _STATCAST_DIR / filename.removeprefix("statcast/")
+    else:
+        filepath = _DATA_DIR / filename
     if filepath.exists() and filepath.suffix == ".csv":
         filepath.unlink()
         return True

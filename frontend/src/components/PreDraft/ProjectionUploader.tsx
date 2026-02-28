@@ -12,6 +12,7 @@ interface SavedFile {
   file_type: string;
   original_name: string;
   size_kb: number;
+  category?: 'projection' | 'statcast';
 }
 
 export default function ProjectionUploader({ onUploaded }: { onUploaded?: () => void }) {
@@ -113,6 +114,7 @@ export default function ProjectionUploader({ onUploaded }: { onUploaded?: () => 
           msg += ')';
         }
         setStatcastMessage(msg);
+        await fetchFiles();
         onUploaded?.();
       } catch (err: unknown) {
         setStatcastStatus('error');
@@ -163,9 +165,13 @@ export default function ProjectionUploader({ onUploaded }: { onUploaded?: () => 
                   <div className="flex items-center gap-2">
                     <span className={clsx(
                       'pos-badge',
-                      f.file_type === 'hitting' ? 'pos-of' : 'pos-sp',
+                      f.category === 'statcast'
+                        ? 'bg-value/20 text-value'
+                        : f.file_type === 'hitting' ? 'pos-of' : 'pos-sp',
                     )}>
-                      {f.file_type === 'hitting' ? 'BAT' : 'PIT'}
+                      {f.category === 'statcast'
+                        ? (f.file_type === 'hitter' ? 'SC-H' : 'SC-P')
+                        : (f.file_type === 'hitting' ? 'BAT' : 'PIT')}
                     </span>
                     <span className="text-text-primary text-sm">{f.original_name}</span>
                     <span className="text-text-muted text-xs font-mono">{f.size_kb}kb</span>

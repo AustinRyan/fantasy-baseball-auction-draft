@@ -86,6 +86,13 @@ async def clear_all_projections(delete_files: bool = Query(True)):
     return {"message": "All projections cleared", "files_deleted": delete_files}
 
 
+@router.get("/news/{player_name}")
+async def get_player_news(player_name: str):
+    """Get recent MLB transactions and IL status for a player."""
+    from ..services.mlb_news import get_player_news as _get_news
+    return _get_news(player_name)
+
+
 @router.get("/players")
 async def list_players(
     position: Optional[str] = None,

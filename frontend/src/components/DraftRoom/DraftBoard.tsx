@@ -1,8 +1,23 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
-import { Search, Star, ChevronDown, ChevronUp, X, Crosshair, Eye, EyeOff } from 'lucide-react';
+import { Search, Star, ChevronDown, ChevronUp, X, Crosshair, Eye, EyeOff, Newspaper, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import { useDraftStore } from '@/store/draftStore';
+import { projectionsApi } from '@/api/client';
 import type { Player } from '@/store/draftStore';
+
+interface PlayerNews {
+  player_id: number | null;
+  status: string;
+  transactions: { date: string; type: string; description: string }[];
+  age?: number;
+  debut?: string;
+  bat_side?: string;
+  throw_hand?: string;
+  height?: string;
+  weight?: number;
+  current_team?: string;
+  error?: string;
+}
 
 const POSITIONS_HITTERS = ['C', '1B', '2B', '3B', 'SS', 'OF'];
 const POSITIONS_PITCHERS = ['SP', 'RP'];
@@ -81,6 +96,9 @@ function PlayerCard({
   onTarget: () => void;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const [news, setNews] = useState<PlayerNews | null>(null);
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [showNews, setShowNews] = useState(false);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -89,6 +107,20 @@ function PlayerCard({
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [onClose]);
+
+  const fetchNews = async () => {
+    if (news) { setShowNews(!showNews); return; }
+    setNewsLoading(true);
+    setShowNews(true);
+    try {
+      const res = await projectionsApi.getPlayerNews(player.name);
+      setNews(res.data);
+    } catch {
+      setNews({ player_id: null, status: 'Unknown', transactions: [], error: 'Failed to fetch news' });
+    } finally {
+      setNewsLoading(false);
+    }
+  };
 
   // Center the card vertically in the viewport, positioned to the right of the table
   const cardHeight = 300;
@@ -184,6 +216,78 @@ function PlayerCard({
           </span>
         )}
       </div>
+
+      {/* News toggle */}
+      <div className="px-3 pb-2">
+        <button
+          onClick={fetchNews}
+          className={clsx('wr-btn w-full text-xs', showNews ? 'wr-btn-surface' : 'wr-btn-surface')}
+        >
+          <Newspaper className="h-3.5 w-3.5" />
+          {newsLoading ? 'Loading...' : showNews ? 'Hide News' : 'Recent News & Status'}
+        </button>
+      </div>
+
+      {/* News panel */}
+      {showNews && (
+        <div className="border-t border-border px-3 py-2 max-h-[200px] overflow-y-auto">
+          {newsLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-gold border-t-transparent" />
+            </div>
+          ) : news ? (
+            <div className="space-y-2">
+              {/* Player bio + status */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {news.age && <span className="text-[11px] text-text-secondary">Age {news.age}</span>}
+                  {news.bat_side && <span className="text-[11px] text-text-muted">B: {news.bat_side}</span>}
+                  {news.throw_hand && <span className="text-[11px] text-text-muted">T: {news.throw_hand}</span>}
+                </div>
+                <span className={clsx(
+                  'rounded-sm px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider',
+                  news.status === 'Active' ? 'bg-steal/15 text-steal' :
+                  news.status.startsWith('IL') ? 'bg-big-overpay/15 text-big-overpay' :
+                  news.status === 'Minors' ? 'bg-overpay/15 text-overpay' :
+                  'bg-text-muted/15 text-text-muted'
+                )}>
+                  {news.status}
+                </span>
+              </div>
+
+              {/* IL warning */}
+              {news.status.startsWith('IL') && (
+                <div className="flex items-center gap-1.5 rounded bg-big-overpay/10 border border-big-overpay/20 px-2 py-1.5 text-[11px] text-big-overpay font-medium">
+                  <AlertTriangle className="h-3 w-3 shrink-0" />
+                  Currently on the {news.status.replace('IL-', '')}-day injured list
+                </div>
+              )}
+
+              {/* Transactions */}
+              {news.transactions.length > 0 ? (
+                <div className="space-y-1.5">
+                  <span className="text-[9px] font-semibold uppercase tracking-wider text-text-muted">Recent Transactions</span>
+                  {news.transactions.map((tx, i) => (
+                    <div key={i} className="rounded bg-dugout border border-border px-2 py-1.5">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-[10px] font-mono text-text-muted">{tx.date}</span>
+                        <span className="text-[10px] font-semibold text-text-secondary">{tx.type}</span>
+                      </div>
+                      <p className="text-[11px] text-text-secondary leading-snug">{tx.description}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-text-muted py-2">No recent transactions found.</p>
+              )}
+
+              {news.error && (
+                <p className="text-[11px] text-big-overpay">{news.error}</p>
+              )}
+            </div>
+          ) : null}
+        </div>
+      )}
 
       {/* Target button */}
       <div className="border-t border-border p-2.5">

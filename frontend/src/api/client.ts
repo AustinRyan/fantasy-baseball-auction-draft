@@ -12,6 +12,7 @@ export const projectionsApi = {
   getFiles: () => api.get('/projections/files'),
   deleteFile: (filename: string) => api.delete(`/projections/files/${filename}`),
   clearAll: (deleteFiles = true) => api.delete('/projections/clear', { params: { delete_files: deleteFiles } }),
+  getPlayerNews: (playerName: string) => api.get(`/projections/news/${encodeURIComponent(playerName)}`),
   uploadStatcast: (file: File, playerType: 'hitter' | 'pitcher') => {
     const form = new FormData();
     form.append('file', file);
