@@ -5,10 +5,7 @@ import { useDraftStore } from '@/store/draftStore';
 import { draftApi } from '@/api/client';
 import type { Player, DraftPick } from '@/store/draftStore';
 
-const TEAMS = Array.from({ length: 11 }, (_, i) => ({
-  id: `team_${i + 1}`,
-  label: `Team ${i + 1}`,
-}));
+// Team names come from the store (loaded from keepers API)
 
 function classificationSignal(classification: string) {
   const c = classification.toLowerCase();
@@ -21,7 +18,7 @@ function classificationSignal(classification: string) {
 }
 
 export default function BidInput({ id, onPickRecorded }: { id?: string; onPickRecorded?: () => void }) {
-  const { players, selectedPlayer, setSelectedPlayer, lastPicks, setLastPicks, markPlayerDrafted, markPlayerUndrafted } = useDraftStore();
+  const { players, selectedPlayer, setSelectedPlayer, lastPicks, setLastPicks, markPlayerDrafted, markPlayerUndrafted, teamNames, getTeamName } = useDraftStore();
   const [teamId, setTeamId] = useState('team_1');
   const [price, setPrice] = useState<number | ''>('');
   const [recording, setRecording] = useState(false);
@@ -135,7 +132,7 @@ export default function BidInput({ id, onPickRecorded }: { id?: string; onPickRe
           <div>
             <label className="block text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-1">Team</label>
             <select value={teamId} onChange={(e) => setTeamId(e.target.value)} className="wr-select w-full">
-              {TEAMS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+              {teamNames.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </div>
           <div>
@@ -192,7 +189,7 @@ export default function BidInput({ id, onPickRecorded }: { id?: string; onPickRe
               >
                 <span className="font-medium">{pick.player_name}</span>
                 <span className="flex items-center gap-2">
-                  <span className="text-inherit/60">{pick.team_id.replace('team_', 'T')}</span>
+                  <span className="text-inherit/60">{getTeamName(pick.team_id)}</span>
                   <span className="font-mono font-bold">${pick.price}</span>
                 </span>
               </div>

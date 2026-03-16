@@ -11,11 +11,21 @@ from app.services.draft_tracker import reset_draft
 
 
 @pytest.fixture(autouse=True)
-def clean_state():
-    """Reset all state between tests."""
+def clean_state(monkeypatch):
+    """Reset all state between tests. Prevent file writes to data dir."""
     clear_players()
     reset_league()
     reset_draft()
+    # Prevent tests from persisting any files to the real data directory.
+    # Must patch both the module-level name (for internal calls within the
+    # service) AND the router-level imported reference (for endpoint calls).
+    _noop_save = lambda *a, **kw: "test"
+    monkeypatch.setattr("app.services.projection_loader._save_csv_to_disk", _noop_save)
+    # Keeper saves (called internally by add_keeper, set_keepers, etc.)
+    monkeypatch.setattr("app.services.keeper_manager.save_keepers", _noop_save)
+    # Draft state saves (called internally by record_pick/undo_pick + router endpoint)
+    monkeypatch.setattr("app.services.draft_tracker.save_draft_state", _noop_save)
+    monkeypatch.setattr("app.routers.draft._save_draft_state", _noop_save)
     yield
     clear_players()
     reset_league()
@@ -29,7 +39,7 @@ class TestFullWorkflow:
     def _upload_test_data(self):
         """Upload realistic test CSV data."""
         # Create hitters CSV with ~200 AL players
-        hitter_rows = ["Name,Team,Pos,PA,AB,H,HR,R,RBI,SB,BB,SO,AVG"]
+        hitter_rows = ["Name,Team,Pos,PA,AB,H,HR,R,RBI,SB,BB,SO,AVG,OBP"]
         teams = [
             "NYY", "BOS", "BAL", "TOR", "TBR",
             "CHW", "CLE", "DET", "MIN", "KCR",
@@ -45,9 +55,11 @@ class TestFullWorkflow:
             ba = f".{max(200, 310 - i)}"
             pa = max(200, 600 - i * 2)
             ab = int(pa * 0.88)
+            bb = 50
             h = int(ab * int(ba.replace(".", "")) / 1000)
+            obp = f"{(h + bb) / pa:.3f}" if pa > 0 else ".300"
             hitter_rows.append(
-                f"Hitter {i},{t},{positions},{pa},{ab},{h},{hr},{r},{rbi},{sb},50,100,{ba}"
+                f"Hitter {i},{t},{positions},{pa},{ab},{h},{hr},{r},{rbi},{sb},{bb},100,{ba},{obp}"
             )
 
         hitter_csv = "\n".join(hitter_rows)

@@ -5,10 +5,18 @@ import { useDraftStore } from '@/store/draftStore';
 import { projectionsApi } from '@/api/client';
 import type { Player } from '@/store/draftStore';
 
+interface NewsArticle {
+  title: string;
+  link: string;
+  source: string;
+  published: string;
+}
+
 interface PlayerNews {
   player_id: number | null;
   status: string;
   transactions: { date: string; type: string; description: string }[];
+  articles?: NewsArticle[];
   age?: number;
   debut?: string;
   bat_side?: string;
@@ -169,8 +177,15 @@ function PlayerCard({
           <div className="font-mono text-base font-bold text-text-primary">${player.dollar_value.toFixed(1)}</div>
         </div>
         <div className="rounded bg-dugout border border-border p-2">
-          <div className="text-[9px] font-semibold uppercase tracking-wider text-text-muted">Inflated</div>
-          <div className="font-mono text-base font-bold text-gold">${player.inflated_value.toFixed(1)}</div>
+          <div className="text-[9px] font-semibold uppercase tracking-wider text-text-muted">Keeper Adj.</div>
+          <div className="font-mono text-base font-bold text-gold">
+            ${player.inflated_value.toFixed(1)}
+            {player.keeper_premium !== 0 && (
+              <span className={clsx('text-[10px] ml-1', player.keeper_premium > 0 ? 'text-steal' : 'text-big-overpay')}>
+                {player.keeper_premium > 0 ? '+' : ''}{player.keeper_premium.toFixed(1)}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -230,7 +245,7 @@ function PlayerCard({
 
       {/* News panel */}
       {showNews && (
-        <div className="border-t border-border px-3 py-2 max-h-[200px] overflow-y-auto">
+        <div className="border-t border-border px-3 py-2 max-h-[300px] overflow-y-auto">
           {newsLoading ? (
             <div className="flex items-center justify-center py-4">
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-gold border-t-transparent" />
@@ -263,8 +278,30 @@ function PlayerCard({
                 </div>
               )}
 
+              {/* News Articles */}
+              {news.articles && news.articles.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="text-[9px] font-semibold uppercase tracking-wider text-text-muted">Latest News</span>
+                  {news.articles.map((article, i) => (
+                    <a
+                      key={i}
+                      href={article.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block rounded bg-dugout border border-border px-2 py-1.5 hover:border-gold/40 transition-colors group"
+                    >
+                      <p className="text-[11px] text-text-primary leading-snug group-hover:text-gold transition-colors">{article.title}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        {article.source && <span className="text-[10px] font-semibold text-text-muted">{article.source}</span>}
+                        {article.published && <span className="text-[10px] font-mono text-text-muted">{article.published}</span>}
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              )}
+
               {/* Transactions */}
-              {news.transactions.length > 0 ? (
+              {news.transactions.length > 0 && (
                 <div className="space-y-1.5">
                   <span className="text-[9px] font-semibold uppercase tracking-wider text-text-muted">Recent Transactions</span>
                   {news.transactions.map((tx, i) => (
@@ -277,8 +314,10 @@ function PlayerCard({
                     </div>
                   ))}
                 </div>
-              ) : (
-                <p className="text-[11px] text-text-muted py-2">No recent transactions found.</p>
+              )}
+
+              {!news.articles?.length && !news.transactions.length && (
+                <p className="text-[11px] text-text-muted py-2">No recent news or transactions found.</p>
               )}
 
               {news.error && (
@@ -330,10 +369,10 @@ export default function DraftBoard() {
   };
 
   const filtered = useMemo(() => {
-    // Toggle: ON = only drafted, OFF = only available
+    // Toggle: ON = only drafted, OFF = only available (keepers excluded from both)
     let list = showDrafted
-      ? players.filter((p) => p.is_drafted)
-      : players.filter((p) => !p.is_drafted);
+      ? players.filter((p) => p.is_drafted && !p.is_keeper)
+      : players.filter((p) => !p.is_drafted && !p.is_keeper);
     if (showHitters !== null) list = list.filter((p) => p.is_hitter === showHitters);
     if (positionFilter) list = list.filter((p) => p.positions.includes(positionFilter));
     if (searchQuery.trim()) {

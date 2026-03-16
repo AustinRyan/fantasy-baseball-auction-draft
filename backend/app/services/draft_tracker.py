@@ -128,6 +128,9 @@ def record_pick(player_id: str, team_id: str, price: int) -> DraftPick:
     # Classify the pick (after recalculation so we use updated values)
     pick.classification = classify_pick(player, price)
 
+    # Auto-save after every pick
+    save_draft_state()
+
     return pick
 
 
@@ -173,6 +176,9 @@ def undo_pick(pick_id: str) -> DraftPick:
     # Recalculate inflation
     _recalculate_values()
 
+    # Auto-save after undo
+    save_draft_state()
+
     return pick
 
 
@@ -213,6 +219,10 @@ def _recalculate_values() -> None:
 
     # Re-run dollar value calculation with new inflation
     calculate_dollar_values(players, league_config, inflation_rate)
+
+    # Re-apply keeper premiums
+    from .breakout_predictor import apply_keeper_premiums
+    apply_keeper_premiums(players)
 
 
 def save_draft_state() -> str:
@@ -255,18 +265,23 @@ def load_draft_state() -> DraftState:
         team.budget_spent = 0
         team.draft_picks = []
 
-    # Re-apply picks
+    # Re-apply picks, skipping any that reference missing players (e.g. test data)
+    valid_picks = []
     for pick in _draft_state.picks:
         player = get_player(pick.player_id)
-        if player is not None:
-            player.is_drafted = True
-            player.draft_team_id = pick.team_id
-            player.draft_price = pick.price
+        if player is None:
+            continue  # Skip picks for players not in the current pool
+
+        player.is_drafted = True
+        player.draft_team_id = pick.team_id
+        player.draft_price = pick.price
 
         team = league.get_team(pick.team_id)
         if team is not None:
             team.budget_spent += pick.price
             team.draft_picks.append(pick.player_id)
+        valid_picks.append(pick)
 
+    _draft_state.picks = valid_picks
     _recalculate_values()
     return _draft_state

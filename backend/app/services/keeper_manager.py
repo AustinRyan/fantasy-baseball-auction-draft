@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import csv
 import io
+import json
+import logging
+import pathlib
 from typing import Optional
 
 from thefuzz import fuzz, process
@@ -11,6 +14,10 @@ from thefuzz import fuzz, process
 from ..config import league_config
 from ..models.league import League, Team, Keeper
 from ..services.projection_loader import get_players
+
+logger = logging.getLogger(__name__)
+
+_SAVE_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "data" / "draft_state"
 
 # ---------------------------------------------------------------------------
 # Singleton league instance
@@ -75,6 +82,7 @@ def update_team(team_id: str, *, name: Optional[str] = None, is_user: Optional[b
         team.name = name
     if is_user is not None:
         team.is_user = is_user
+    save_keepers()
     return team
 
 
@@ -88,6 +96,7 @@ def add_keeper(
     salary: int,
     positions: Optional[list[str]] = None,
     player_id: Optional[str] = None,
+    _persist: bool = True,
 ) -> Keeper:
     """Add a keeper to a team. ``player_id`` is resolved later during linking."""
     team = get_team(team_id)
@@ -100,6 +109,8 @@ def add_keeper(
         positions=positions or [],
     )
     team.keepers.append(keeper)
+    if _persist:
+        save_keepers()
     return keeper
 
 
@@ -119,8 +130,10 @@ def set_keepers(team_id: str, keepers_data: list[dict]) -> list[Keeper]:
             player_name=kd["player_name"],
             salary=kd["salary"],
             positions=kd.get("positions", []),
+            _persist=False,
         )
         result.append(k)
+    save_keepers()
     return result
 
 
@@ -134,7 +147,10 @@ def remove_keeper(team_id: str, player_name: str) -> bool:
         k for k in team.keepers
         if (k.player_name if isinstance(k, Keeper) else k["player_name"]).lower() != player_name.lower()
     ]
-    return len(team.keepers) < before
+    removed = len(team.keepers) < before
+    if removed:
+        save_keepers()
+    return removed
 
 
 # ---------------------------------------------------------------------------
@@ -206,8 +222,7 @@ def calculate_inflation() -> dict:
 
     Where:
       remaining_budget = total_budget - sum(keeper_salaries)
-      remaining_value  = total_budget - sum(keeper_projected_values)
-      keeper_projected_values = sum of dollar_value for all keeper players
+      remaining_value  = sum of dollar_value for all non-keeper draftable players
     """
     players = get_players()
     league = get_league()
@@ -225,12 +240,18 @@ def calculate_inflation() -> dict:
     )
 
     remaining_budget = total_budget - total_keeper_salary
-    remaining_value = total_budget - keeper_projected_value
+
+    # Remaining value = sum of non-keeper player values (what's available to draft)
+    remaining_value = sum(
+        p.dollar_value
+        for p in players.values()
+        if not p.is_keeper and p.dollar_value > 0
+    )
 
     if remaining_value <= 0:
         inflation_rate = 1.0
     else:
-        inflation_rate = remaining_budget / remaining_value
+        inflation_rate = max(1.0, remaining_budget / remaining_value)
 
     return {
         "inflation_rate": round(inflation_rate, 4),
@@ -281,7 +302,74 @@ def import_keepers_csv(csv_content: bytes) -> dict:
             errors.append(f"Team '{team_name}' not found, skipping {player_name}")
             continue
 
-        add_keeper(team.id, player_name, salary)
+        add_keeper(team.id, player_name, salary, _persist=False)
         imported += 1
 
+    if imported:
+        save_keepers()
     return {"imported": imported, "errors": errors}
+
+
+# ---------------------------------------------------------------------------
+# Persistence
+# ---------------------------------------------------------------------------
+
+def save_keepers() -> str:
+    """Save all team names, is_user flags, and keepers to JSON."""
+    league = get_league()
+    _SAVE_DIR.mkdir(parents=True, exist_ok=True)
+    filepath = _SAVE_DIR / "keepers.json"
+    data = {
+        "teams": [
+            {
+                "id": t.id,
+                "name": t.name,
+                "is_user": t.is_user,
+                "keepers": [
+                    {
+                        "player_name": k.player_name if isinstance(k, Keeper) else k["player_name"],
+                        "salary": k.salary if isinstance(k, Keeper) else k["salary"],
+                        "positions": k.positions if isinstance(k, Keeper) else k.get("positions", []),
+                    }
+                    for k in t.keepers
+                ],
+            }
+            for t in league.teams
+        ]
+    }
+    with open(filepath, "w") as f:
+        json.dump(data, f, indent=2)
+    logger.info(f"Saved keepers to {filepath}")
+    return str(filepath)
+
+
+def load_keepers() -> int:
+    """Load keepers from JSON. Call after initialize_league()."""
+    filepath = _SAVE_DIR / "keepers.json"
+    if not filepath.exists():
+        return 0
+
+    league = get_league()
+    with open(filepath, "r") as f:
+        data = json.load(f)
+
+    loaded = 0
+    for team_data in data.get("teams", []):
+        team = league.get_team(team_data["id"])
+        if team is None:
+            continue
+        team.name = team_data.get("name", team.name)
+        team.is_user = team_data.get("is_user", False)
+        team.keepers = []
+        for kd in team_data.get("keepers", []):
+            keeper = Keeper(
+                player_id="",
+                player_name=kd["player_name"],
+                salary=kd["salary"],
+                positions=kd.get("positions", []),
+            )
+            team.keepers.append(keeper)
+            loaded += 1
+
+    logger.info(f"Loaded {loaded} keepers from {filepath}")
+    return loaded

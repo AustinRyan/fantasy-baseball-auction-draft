@@ -168,19 +168,49 @@ async def get_alerts():
 
 @router.get("/team/{team_id}/roster")
 async def get_team_roster(team_id: str):
-    """Get any team's roster needs."""
+    """Get any team's roster in the same format as my-roster."""
+    from ..config import league_config
+
+    league = get_league()
+    team = league.get_team(team_id)
+    if team is None:
+        raise HTTPException(status_code=404, detail=f"Team '{team_id}' not found")
+
     try:
         needs = _get_roster_needs(team_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    league = get_league()
-    team = league.get_team(team_id)
+    budget_total = league_config.budget_per_team
+    budget_spent = team.budget_spent + team.keeper_salary
+    budget_remaining = team.remaining_budget
+    empty_slots = sum(1 for n in needs if not n.filled)
+    max_bid = max(1, budget_remaining - empty_slots + 1)
+
+    slots = []
+    for n in needs:
+        slot_name = n.slot.split(" (")[0]
+        player_price = None
+        if n.filled and n.player_name:
+            from ..services.projection_loader import get_players
+            for p in get_players().values():
+                if p.name == n.player_name and (p.is_drafted or p.is_keeper):
+                    player_price = p.draft_price or p.keeper_salary
+                    break
+        slots.append({
+            "slot": slot_name,
+            "player_name": n.player_name,
+            "price": player_price,
+        })
+
     return {
         "team_id": team_id,
-        "team_name": team.name if team else team_id,
-        "remaining_budget": team.remaining_budget if team else 0,
-        "roster_needs": [n.model_dump() for n in needs],
+        "team_name": team.name,
+        "budget_total": budget_total,
+        "budget_spent": budget_spent,
+        "budget_remaining": budget_remaining,
+        "max_bid": max_bid,
+        "slots": slots,
     }
 
 

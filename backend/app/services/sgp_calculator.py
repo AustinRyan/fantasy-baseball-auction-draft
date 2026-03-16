@@ -10,7 +10,7 @@ def calculate_sgp_hitting(player: Player, config: LeagueConfig = league_config) 
     """Calculate per-category SGP for a hitter.
 
     Counting stats: player_stat / denominator
-    Ratio stats (BA): volume-weighted marginal contribution
+    Ratio stats (OBP): volume-weighted marginal contribution
     """
     if not player.hitting:
         return {}
@@ -25,19 +25,17 @@ def calculate_sgp_hitting(player: Player, config: LeagueConfig = league_config) 
     sgp["RBI"] = h.RBI / d.RBI if d.RBI else 0
     sgp["SB"] = h.SB / d.SB if d.SB else 0
 
-    # BA: volume-weighted marginal contribution
-    # Baseline BA = league average (~.260 for projections)
-    # SGP = ((H - baseline_BA * AB) / team_AB) / BA_denominator
-    # team_AB ≈ total_AB / num_teams
-    if h.AB > 0 and d.BA > 0:
-        baseline_ba = 0.260
-        total_hitters = config.total_hitters_drafted
-        # Estimate team AB: ~550 AB per hitter slot
-        team_ab = 550 * config.roster.total_hitters
-        marginal_ba = (h.H - baseline_ba * h.AB) / team_ab
-        sgp["BA"] = marginal_ba / d.BA
+    # OBP: volume-weighted marginal contribution
+    # Baseline OBP = league average (~.320 for projections)
+    # SGP = ((player_OBP - baseline_OBP) * PA / team_PA) / OBP_denominator
+    # team_PA ≈ 600 PA per hitter slot
+    if h.PA > 0 and d.OBP > 0 and h.OBP > 0:
+        baseline_obp = 0.320
+        team_pa = 600 * config.roster.total_hitters
+        marginal_obp = (h.OBP - baseline_obp) * h.PA / team_pa
+        sgp["OBP"] = marginal_obp / d.OBP
     else:
-        sgp["BA"] = 0
+        sgp["OBP"] = 0
 
     return sgp
 
@@ -64,7 +62,7 @@ def calculate_sgp_pitching(player: Player, config: LeagueConfig = league_config)
     # team_IP ≈ min_ip or calculated from roster
     if p.IP > 0 and d.ERA > 0:
         baseline_era = 4.00
-        team_ip = config.min_ip  # 900 IP minimum
+        team_ip = config.min_team_ip  # 900 IP minimum
         # Marginal ERA contribution (negative is better)
         marginal_era = (p.ERA - baseline_era) * p.IP / team_ip
         sgp["ERA"] = -marginal_era / d.ERA  # Negate: lower ERA = more SGP
@@ -74,7 +72,7 @@ def calculate_sgp_pitching(player: Player, config: LeagueConfig = league_config)
     # WHIP: same pattern as ERA (lower is better)
     if p.IP > 0 and d.WHIP > 0:
         baseline_whip = 1.30
-        team_ip = config.min_ip
+        team_ip = config.min_team_ip
         marginal_whip = (p.WHIP - baseline_whip) * p.IP / team_ip
         sgp["WHIP"] = -marginal_whip / d.WHIP  # Negate: lower WHIP = more SGP
     else:

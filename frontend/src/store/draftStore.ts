@@ -23,10 +23,13 @@ export interface Player {
   is_hitter: boolean;
   dollar_value: number;
   inflated_value: number;
+  keeper_premium: number;
   pre_bid_range: PriceRange | null;
   breakout: Breakout | null;
   is_drafted: boolean;
   is_keeper: boolean;
+  keeper_salary: number | null;
+  keeper_team_id: string | null;
   draft_price: number | null;
   draft_team_id: string | null;
 }
@@ -40,6 +43,11 @@ export interface DraftPick {
   classification: string;
 }
 
+export interface TeamInfo {
+  id: string;
+  name: string;
+}
+
 interface DraftStore {
   players: Player[];
   setPlayers: (players: Player[]) => void;
@@ -47,6 +55,9 @@ interface DraftStore {
   markPlayerUndrafted: (playerId: string) => void;
   myTeamId: string;
   setMyTeamId: (id: string) => void;
+  teamNames: TeamInfo[];
+  setTeamNames: (teams: TeamInfo[]) => void;
+  getTeamName: (teamId: string) => string;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   positionFilter: string | null;
@@ -84,6 +95,8 @@ export const useDraftStore = create<DraftStore>((set) => ({
           ? { ...p, is_drafted: true, draft_team_id: teamId, draft_price: price }
           : p
       ),
+      // Clear selectedPlayer if it's the one being drafted (prevents stale target)
+      selectedPlayer: state.selectedPlayer?.id === playerId ? null : state.selectedPlayer,
     })),
   markPlayerUndrafted: (playerId) =>
     set((state) => ({
@@ -95,6 +108,12 @@ export const useDraftStore = create<DraftStore>((set) => ({
     })),
   myTeamId: 'team_1',
   setMyTeamId: (id) => set({ myTeamId: id }),
+  teamNames: Array.from({ length: 11 }, (_, i) => ({ id: `team_${i + 1}`, name: `Team ${i + 1}` })),
+  setTeamNames: (teams) => set({ teamNames: teams }),
+  getTeamName: (teamId) => {
+    const state = useDraftStore.getState();
+    return state.teamNames.find((t) => t.id === teamId)?.name ?? teamId;
+  },
   searchQuery: '',
   setSearchQuery: (q) => set({ searchQuery: q }),
   positionFilter: null,
@@ -114,6 +133,6 @@ export const useDraftStore = create<DraftStore>((set) => ({
   setLastPicks: (picks) => set({ lastPicks: picks }),
   draftActive: false,
   setDraftActive: (v) => set({ draftActive: v }),
-  darkMode: true,
+  darkMode: false,
   toggleDarkMode: () => set((state) => ({ darkMode: !state.darkMode })),
 }));

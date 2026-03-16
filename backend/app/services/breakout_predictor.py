@@ -5,7 +5,16 @@ from __future__ import annotations
 from ..models.player import BreakoutProfile, Player
 
 
-def score_breakout(player: Player) -> BreakoutProfile:
+def _as_pct(val: float | None) -> float | None:
+    """Normalize a percentage field — if stored as decimal (0.247), convert to 24.7."""
+    if val is None:
+        return None
+    if val < 1.0:
+        return val * 100
+    return val
+
+
+def score_breakout(player: Player, min_pa: int = 200, min_ip: int = 30) -> BreakoutProfile:
     """Calculate breakout/decline risk profile.
 
     Composite score based on:
@@ -13,7 +22,19 @@ def score_breakout(player: Player) -> BreakoutProfile:
     Pitchers: Age, Stuff+, K%, CSW%
 
     Returns score from -1 (decline risk) to +1 (high upside).
+    Players below minimum PA/IP are automatically "Stable" — not enough
+    playing time to make a meaningful breakout prediction.
     """
+    # Gate: players without enough playing time get "Stable"
+    if player.is_hitter:
+        pa = player.hitting.PA if player.hitting else 0
+        if pa < min_pa:
+            return BreakoutProfile(score=0.0, label="Stable", factors=["Insufficient PA for breakout analysis"])
+    else:
+        ip = player.pitching.IP if player.pitching else 0
+        if ip < min_ip:
+            return BreakoutProfile(score=0.0, label="Stable", factors=["Insufficient IP for breakout analysis"])
+
     extra = player.__dict__.get("_extra", {})
     score = 0.0
     factors = []
@@ -73,7 +94,7 @@ def score_breakout(player: Player) -> BreakoutProfile:
                 factors.append(f"xwOBA {xwoba:.3f} (poor)")
 
         # Barrel rate: >10% is elite
-        barrel = extra.get("barrel_pct")
+        barrel = _as_pct(extra.get("barrel_pct"))
         if barrel is not None:
             if barrel > 12:
                 score += 0.15
@@ -86,7 +107,7 @@ def score_breakout(player: Player) -> BreakoutProfile:
                 factors.append(f"Barrel {barrel:.1f}% (poor)")
 
         # Hard hit rate: >42% is good
-        hard_hit = extra.get("hard_hit_pct")
+        hard_hit = _as_pct(extra.get("hard_hit_pct"))
         if hard_hit is not None:
             if hard_hit > 45:
                 score += 0.12
@@ -137,7 +158,7 @@ def score_breakout(player: Player) -> BreakoutProfile:
                 factors.append(f"Stuff+ {stuff:.0f} (below avg)")
 
         # K rate
-        k_pct = extra.get("k_pct")
+        k_pct = _as_pct(extra.get("k_pct"))
         if k_pct is not None:
             if k_pct > 28:
                 score += 0.15
@@ -150,7 +171,7 @@ def score_breakout(player: Player) -> BreakoutProfile:
                 factors.append(f"K% {k_pct:.1f}% (low)")
 
         # CSW%: Called Strike + Whip rate — best single command metric
-        csw = extra.get("csw_pct")
+        csw = _as_pct(extra.get("csw_pct"))
         if csw is not None:
             if csw > 32:
                 score += 0.12
@@ -190,7 +211,7 @@ def score_breakout(player: Player) -> BreakoutProfile:
                 factors.append(f"Location+ {loc:.0f} (poor command)")
 
         # SwStr%: swinging strike rate — validates K upside
-        swstr = extra.get("swstr_pct")
+        swstr = _as_pct(extra.get("swstr_pct"))
         if swstr is not None:
             if swstr > 13:
                 score += 0.10
@@ -206,9 +227,10 @@ def score_breakout(player: Player) -> BreakoutProfile:
     score = max(-1.0, min(1.0, score))
 
     # Map score to label
+    # Moderate requires score >= 0.25 so age alone (0.20) can't trigger it
     if score >= 0.4:
         label = "High Upside"
-    elif score >= 0.15:
+    elif score >= 0.25:
         label = "Moderate Upside"
     elif score <= -0.3:
         label = "Decline Risk"
@@ -218,8 +240,58 @@ def score_breakout(player: Player) -> BreakoutProfile:
     return BreakoutProfile(score=round(score, 2), label=label, factors=factors)
 
 
-def calculate_all_breakouts(players: dict[str, Player]) -> dict[str, Player]:
+def calculate_all_breakouts(
+    players: dict[str, Player],
+    min_pa: int = 200,
+    min_ip: int = 30,
+) -> dict[str, Player]:
     """Calculate breakout profiles for all players."""
     for player in players.values():
-        player.breakout = score_breakout(player)
+        player.breakout = score_breakout(player, min_pa=min_pa, min_ip=min_ip)
+    return players
+
+
+def apply_keeper_premiums(players: dict[str, Player]) -> dict[str, Player]:
+    """Apply keeper league premium/discount to inflated values.
+
+    In keeper leagues, young breakout candidates are worth more than their
+    single-season projections because owners can keep them at the draft price
+    in future years.  Decline-risk veterans are worth less for the same reason.
+
+    Premium is a percentage of inflated_value based on breakout label:
+        High Upside:     +18%
+        Moderate Upside: +10%
+        Stable:            0%
+        Decline Risk:     -8%
+
+    Only applies to players valued above $1 (don't inflate fringe players).
+    """
+    PREMIUM_MAP = {
+        "High Upside": 0.18,
+        "Moderate Upside": 0.10,
+        "Stable": 0.0,
+        "Decline Risk": -0.08,
+    }
+
+    for player in players.values():
+        if player.breakout is None or player.inflated_value <= 1.0:
+            player.keeper_premium = 0.0
+            continue
+
+        pct = PREMIUM_MAP.get(player.breakout.label, 0.0)
+        premium = round(player.dollar_value * pct, 1)
+        player.keeper_premium = premium
+        player.inflated_value = round(player.inflated_value + premium, 1)
+
+        # Recalculate pre-bid ranges off the new inflated value
+        if player.pre_bid_range is not None:
+            from ..config import league_config
+            iv = player.inflated_value
+            player.pre_bid_range.steal_below = round(iv * league_config.steal_threshold, 1)
+            player.pre_bid_range.value_below = round(iv * league_config.value_threshold, 1)
+            player.pre_bid_range.fair_low = round(iv * league_config.fair_low, 1)
+            player.pre_bid_range.fair_high = round(iv * league_config.fair_high, 1)
+            player.pre_bid_range.overpay_above = round(iv * league_config.overpay_threshold, 1)
+            player.pre_bid_range.big_overpay_above = round(iv * league_config.big_overpay_threshold, 1)
+
     return players

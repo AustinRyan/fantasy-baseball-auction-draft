@@ -6,13 +6,18 @@ from typing import Optional
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
+from pydantic import BaseModel
+
 from ..services.projection_loader import (
+    add_nl_keeper_player,
     clear_players,
     delete_saved_file,
+    get_nl_keeper_players,
     get_players,
     list_saved_files,
     load_projections_csv,
     merge_statcast_csv,
+    remove_nl_keeper_player,
 )
 
 router = APIRouter()
@@ -113,3 +118,49 @@ async def list_players(
         "players": [p.model_dump() for p in players],
         "count": len(players),
     }
+
+
+# ---------------------------------------------------------------------------
+# NL Keeper-Eligible Players
+# ---------------------------------------------------------------------------
+
+class NLPlayerIn(BaseModel):
+    name: str
+    team: str
+    positions: list[str]
+    stats: dict
+
+
+@router.post("/nl-keeper")
+async def add_nl_player(body: NLPlayerIn):
+    """Add an NL-transferred player to the pool (keepable with $2 penalty)."""
+    player = add_nl_keeper_player(
+        name=body.name,
+        team=body.team,
+        positions=body.positions,
+        stats=body.stats,
+    )
+    return {
+        "message": f"Added {player.name} ({player.team}) as NL keeper-eligible",
+        "player": player.model_dump(),
+        "total_in_pool": len(get_players()),
+    }
+
+
+@router.get("/nl-keepers")
+async def list_nl_players():
+    """List all NL keeper-eligible players."""
+    players = get_nl_keeper_players()
+    return {
+        "players": [p.model_dump() for p in players],
+        "count": len(players),
+    }
+
+
+@router.delete("/nl-keeper/{player_id}")
+async def delete_nl_player(player_id: str):
+    """Remove an NL keeper-eligible player from the pool."""
+    removed = remove_nl_keeper_player(player_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="NL keeper-eligible player not found")
+    return {"message": "Player removed", "total_in_pool": len(get_players())}

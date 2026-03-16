@@ -18,6 +18,10 @@ export const projectionsApi = {
     form.append('file', file);
     return api.post('/projections/statcast', form, { params: { player_type: playerType } });
   },
+  addNlPlayer: (data: { name: string; team: string; positions: string[]; stats: Record<string, number> }) =>
+    api.post('/projections/nl-keeper', data),
+  getNlPlayers: () => api.get('/projections/nl-keepers'),
+  removeNlPlayer: (playerId: string) => api.delete(`/projections/nl-keeper/${playerId}`),
 };
 
 export const valuationsApi = {

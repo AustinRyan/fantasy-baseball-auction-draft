@@ -25,7 +25,7 @@ import PlayerQueue from '@/components/DraftRoom/PlayerQueue';
 import MyRosterPanel from '@/components/MyRoster/MyRosterPanel';
 import DraftRecommendations from '@/components/MyRoster/DraftRecommendations';
 import TeamRosters from '@/components/Analysis/TeamRosters';
-import { valuationsApi, draftApi, exportApi } from '@/api/client';
+import { valuationsApi, draftApi, exportApi, keepersApi } from '@/api/client';
 import { useDraftStore } from '@/store/draftStore';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 
@@ -72,6 +72,8 @@ function App() {
     }
   }, [darkMode]);
 
+  const setTeamNames = useDraftStore((s) => s.setTeamNames);
+
   // Load existing data on mount
   useEffect(() => {
     (async () => {
@@ -84,8 +86,23 @@ function App() {
       } catch {
         // No data yet
       }
+      try {
+        const res = await keepersApi.getTeams();
+        const teams = res.data.teams ?? [];
+        setTeamNames(teams.map((t: { id: string; name: string }) => ({ id: t.id, name: t.name })));
+      } catch { /* not ready */ }
+      // Check if draft was active (auto-loaded from saved state)
+      try {
+        const res = await draftApi.getState();
+        if (res.data?.is_active) {
+          setDraftActive(true);
+          if (res.data.picks?.length > 0) {
+            setLastPicks(res.data.picks.slice(-5).reverse());
+          }
+        }
+      } catch { /* not ready */ }
     })();
-  }, [setPlayers]);
+  }, [setPlayers, setTeamNames, setDraftActive, setLastPicks]);
 
   const fetchValues = useCallback(async () => {
     try {

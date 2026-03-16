@@ -40,7 +40,7 @@ class SGPDenominators(BaseModel):
     RBI: float = 22.0
     SB: float = 8.0
     # Hitting ratio
-    BA: float = 0.0035
+    OBP: float = 0.0045
 
     # Pitching counting stats
     W: float = 3.0
@@ -60,13 +60,17 @@ class LeagueConfig(BaseModel):
     roster: RosterSlots = RosterSlots()
     sgp_denominators: SGPDenominators = SGPDenominators()
 
-    hitting_categories: list = ["R", "HR", "RBI", "SB", "BA"]
+    hitting_categories: list = ["R", "HR", "RBI", "SB", "OBP"]
     pitching_categories: list = ["W", "SV", "K", "ERA", "WHIP"]
 
-    hitter_pitcher_split: float = 0.65  # 65% of dollars to hitters
-    min_ip: int = 900  # Minimum IP for ratio categories
+    hitter_pitcher_split: float = 0.70  # 70% of dollars to hitters
+    min_team_ip: int = 900  # Minimum IP for ratio categories (team total)
     min_keeper_count: int = 4
     max_keeper_count: int = 10
+
+    # Minimum playing time to be considered draftable (filters fringe players)
+    min_pa: int = 200   # Hitters below this get $1 value
+    min_ip: int = 30    # Pitchers below this get $1 value
 
     # Pre-bid range thresholds (multipliers on inflated value)
     steal_threshold: float = 0.70

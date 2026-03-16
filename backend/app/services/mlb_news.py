@@ -6,6 +6,8 @@ import json
 import logging
 import time
 import urllib.request
+import xml.etree.ElementTree as ET
+from html import unescape
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -63,13 +65,70 @@ def search_player_id(name: str) -> Optional[int]:
     return pid
 
 
+def _fetch_news_articles(player_name: str, limit: int = 8) -> list[dict]:
+    """Fetch recent news articles about a player from Google News RSS.
+
+    Returns list of {title, link, source, published} dicts.
+    """
+    cache_key = f"articles:{player_name.lower()}"
+    cached = _get_cached(cache_key)
+    if cached:
+        return cached  # type: ignore[return-value]
+
+    encoded = urllib.request.quote(f"{player_name} MLB baseball")
+    url = f"https://news.google.com/rss/search?q={encoded}&hl=en-US&gl=US&ceid=US:en"
+
+    articles: list[dict] = []
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "FantasyBaseballTool/1.0"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            raw = resp.read().decode()
+
+        root = ET.fromstring(raw)
+        # RSS structure: rss > channel > item
+        channel = root.find("channel")
+        if channel is None:
+            return articles
+
+        for item in channel.findall("item")[:limit]:
+            title_el = item.find("title")
+            link_el = item.find("link")
+            pub_el = item.find("pubDate")
+            source_el = item.find("source")
+
+            title = unescape(title_el.text) if title_el is not None and title_el.text else ""
+            link = link_el.text if link_el is not None and link_el.text else ""
+            published = pub_el.text if pub_el is not None and pub_el.text else ""
+            source = source_el.text if source_el is not None and source_el.text else ""
+
+            # Clean up pubDate to just the date portion (e.g. "Fri, 14 Mar 2025")
+            if published:
+                # Format: "Fri, 14 Mar 2025 12:00:00 GMT" -> "Mar 14, 2025"
+                parts = published.split()
+                if len(parts) >= 5:
+                    published = f"{parts[2]} {parts[1]}, {parts[3]}"
+
+            articles.append({
+                "title": title,
+                "link": link,
+                "source": source,
+                "published": published,
+            })
+    except Exception as e:
+        logger.warning(f"Google News fetch failed for {player_name}: {e}")
+
+    _set_cached(cache_key, articles)  # type: ignore[arg-type]
+    return articles
+
+
 def get_player_news(player_name: str) -> dict:
-    """Get recent transactions and IL status for a player.
+    """Get recent transactions, IL status, and news articles for a player.
 
     Returns dict with:
     - player_id: MLB ID
     - status: current roster status (Active, IL-10, IL-60, etc.)
     - transactions: list of recent transactions with date + description
+    - articles: list of recent news articles with title, link, source, published
     - age: current age
     - debut: MLB debut date
     """
@@ -81,10 +140,13 @@ def get_player_news(player_name: str) -> dict:
     # Step 1: Resolve name to MLB ID
     player_id = search_player_id(player_name)
     if not player_id:
+        # Still fetch news articles even if MLB ID not found
+        articles = _fetch_news_articles(player_name)
         result = {
             "player_id": None,
             "status": "Unknown",
             "transactions": [],
+            "articles": articles,
             "error": "Player not found in MLB database",
         }
         _set_cached(cache_key, result)
@@ -157,10 +219,14 @@ def get_player_news(player_name: str) -> dict:
             status = "Active"
             break
 
+    # Step 5: Fetch news articles
+    articles = _fetch_news_articles(player_name)
+
     result = {
         "player_id": player_id,
         "status": status,
         "transactions": transactions,
+        "articles": articles,
         **player_info,
     }
     _set_cached(cache_key, result)

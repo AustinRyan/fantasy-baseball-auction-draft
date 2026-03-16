@@ -111,7 +111,9 @@ _position_cache: dict[str, list[str]] = {}
 
 # Directory for persisted CSV files
 import pathlib
+import json as _json_mod
 _DATA_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "data" / "projections"
+_NL_KEEPER_FILE = _DATA_DIR.parent / "draft_state" / "nl_keeper_eligible.json"
 
 
 STATCAST_HITTER_MAP = {
@@ -267,7 +269,7 @@ def load_persisted_projections():
 
 def _detect_file_type(df: pd.DataFrame) -> str:
     """Detect if CSV is hitters or pitchers based on columns."""
-    hitting_cols = {"AB", "H", "HR", "RBI", "SB", "AVG", "BA", "R"}
+    hitting_cols = {"AB", "H", "HR", "RBI", "SB", "AVG", "BA", "OBP", "R"}
     pitching_cols = {"IP", "ERA", "WHIP", "SV", "ER"}
 
     cols = set(df.columns)
@@ -428,10 +430,25 @@ def load_projections_csv(
         )
 
         if player_is_hitter:
+            pa = int(row.get("PA", 0) or 0)
+            ab = int(row.get("AB", 0) or 0)
+            h = int(row.get("H", 0) or 0)
+            bb = int(row.get("BB", 0) or 0)
+            ba_val = float(row.get("BA", 0) or 0)
+            obp_val = float(row.get("OBP", 0) or 0)
+
+            # Calculate OBP from components if not provided directly
+            if obp_val == 0 and pa > 0:
+                obp_val = (h + bb) / pa
+
+            # Calculate BA from components if not provided directly
+            if ba_val == 0 and ab > 0:
+                ba_val = h / ab
+
             player.hitting = HittingProjection(
-                PA=int(row.get("PA", 0) or 0),
-                AB=int(row.get("AB", 0) or 0),
-                H=int(row.get("H", 0) or 0),
+                PA=pa,
+                AB=ab,
+                H=h,
                 doubles=int(row.get("2B", 0) or 0),
                 triples=int(row.get("3B", 0) or 0),
                 HR=int(row.get("HR", 0) or 0),
@@ -439,9 +456,10 @@ def load_projections_csv(
                 RBI=int(row.get("RBI", 0) or 0),
                 SB=int(row.get("SB", 0) or 0),
                 CS=int(row.get("CS", 0) or 0),
-                BB=int(row.get("BB", 0) or 0),
+                BB=bb,
                 SO=int(row.get("SO", 0) or 0),
-                BA=float(row.get("BA", 0) or 0),
+                BA=ba_val,
+                OBP=obp_val,
             )
         else:
             player.pitching = PitchingProjection(
@@ -611,3 +629,154 @@ def merge_statcast_csv(
         "unmatched_names": unmatched_names[:20],  # First 20 for debugging
         "total_in_pool": len(_players),
     }
+
+
+# ---------------------------------------------------------------------------
+# NL Keeper-Eligible Players
+# ---------------------------------------------------------------------------
+
+def add_nl_keeper_player(
+    name: str,
+    team: str,
+    positions: list[str],
+    stats: dict,
+) -> Player:
+    """Add an individual NL-transferred player to the pool.
+
+    These are AL players who moved to NL teams but can be kept with a $2 penalty.
+    """
+    player_id = f"nl_{uuid.uuid4().hex[:8]}"
+
+    pa = int(stats.get("PA", 0) or 0)
+    ab = int(stats.get("AB", 0) or 0)
+    h = int(stats.get("H", 0) or 0)
+    bb = int(stats.get("BB", 0) or 0)
+    hr = int(stats.get("HR", 0) or 0)
+    r = int(stats.get("R", 0) or 0)
+    rbi = int(stats.get("RBI", 0) or 0)
+    sb = int(stats.get("SB", 0) or 0)
+    ba = float(stats.get("AVG", 0) or stats.get("BA", 0) or 0)
+    obp = float(stats.get("OBP", 0) or 0)
+
+    # Calculate from components if missing
+    if obp == 0 and pa > 0:
+        obp = (h + bb) / pa
+    if ba == 0 and ab > 0:
+        ba = h / ab
+
+    is_hitter = not any(p in ("SP", "RP", "P") for p in positions)
+
+    player = Player(
+        id=player_id,
+        name=name,
+        team=team,
+        positions=positions,
+        is_hitter=is_hitter,
+        is_nl_keeper_eligible=True,
+    )
+
+    if is_hitter:
+        player.hitting = HittingProjection(
+            PA=pa, AB=ab, H=h, HR=hr, R=r, RBI=rbi,
+            SB=sb, BB=bb, BA=ba, OBP=obp,
+            SO=int(stats.get("SO", 0) or 0),
+        )
+    else:
+        player.pitching = PitchingProjection(
+            IP=float(stats.get("IP", 0) or 0),
+            W=int(stats.get("W", 0) or 0),
+            SV=int(stats.get("SV", 0) or 0),
+            K=int(stats.get("K", 0) or stats.get("SO", 0) or 0),
+            ERA=float(stats.get("ERA", 0) or 0),
+            WHIP=float(stats.get("WHIP", 0) or 0),
+            BB=bb, H=h,
+            ER=int(stats.get("ER", 0) or 0),
+            HR=hr,
+        )
+
+    _players[player.id] = player
+
+    # Save to persistent file
+    _save_nl_players()
+
+    # Recalculate valuations
+    from .sgp_calculator import calculate_player_sgp
+    from .valuation_engine import calculate_dollar_values
+    from .breakout_predictor import score_breakout
+    from ..config import league_config
+    calculate_player_sgp(player, league_config)
+    player.breakout = score_breakout(player)
+    calculate_dollar_values(_players, league_config)
+
+    return player
+
+
+def remove_nl_keeper_player(player_id: str) -> bool:
+    """Remove an NL keeper-eligible player from the pool."""
+    player = _players.get(player_id)
+    if player is None or not player.is_nl_keeper_eligible:
+        return False
+    del _players[player_id]
+    _save_nl_players()
+    return True
+
+
+def get_nl_keeper_players() -> list[Player]:
+    """Get all NL keeper-eligible players."""
+    return [p for p in _players.values() if p.is_nl_keeper_eligible]
+
+
+def _save_nl_players():
+    """Persist NL keeper-eligible players to JSON."""
+    nl_players = get_nl_keeper_players()
+    _NL_KEEPER_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data = []
+    for p in nl_players:
+        entry = {
+            "name": p.name,
+            "team": p.team,
+            "positions": p.positions,
+            "is_hitter": p.is_hitter,
+        }
+        if p.hitting:
+            entry["stats"] = {
+                "PA": p.hitting.PA, "AB": p.hitting.AB, "H": p.hitting.H,
+                "HR": p.hitting.HR, "R": p.hitting.R, "RBI": p.hitting.RBI,
+                "SB": p.hitting.SB, "BB": p.hitting.BB, "SO": p.hitting.SO,
+                "AVG": p.hitting.BA, "OBP": p.hitting.OBP,
+            }
+        elif p.pitching:
+            entry["stats"] = {
+                "IP": p.pitching.IP, "W": p.pitching.W, "SV": p.pitching.SV,
+                "K": p.pitching.K, "ERA": p.pitching.ERA, "WHIP": p.pitching.WHIP,
+                "BB": p.pitching.BB, "H": p.pitching.H, "ER": p.pitching.ER,
+                "HR": p.pitching.HR,
+            }
+        data.append(entry)
+    with open(_NL_KEEPER_FILE, "w") as f:
+        _json_mod.dump(data, f, indent=2)
+
+
+def load_nl_keeper_players() -> int:
+    """Load NL keeper-eligible players from JSON. Called on startup."""
+    if not _NL_KEEPER_FILE.exists():
+        return 0
+
+    with open(_NL_KEEPER_FILE, "r") as f:
+        data = _json_mod.load(f)
+
+    loaded = 0
+    for entry in data:
+        # Skip if already loaded (by name match)
+        if any(p.name == entry["name"] and p.is_nl_keeper_eligible for p in _players.values()):
+            continue
+        add_nl_keeper_player(
+            name=entry["name"],
+            team=entry["team"],
+            positions=entry["positions"],
+            stats=entry.get("stats", {}),
+        )
+        loaded += 1
+
+    logger.info(f"Loaded {loaded} NL keeper-eligible players")
+    return loaded

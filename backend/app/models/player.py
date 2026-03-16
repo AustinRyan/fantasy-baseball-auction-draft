@@ -21,6 +21,7 @@ class HittingProjection(BaseModel):
     BB: int = 0
     SO: int = 0
     BA: float = 0.0
+    OBP: float = 0.0
 
     model_config = {"populate_by_name": True}
 
@@ -72,8 +73,12 @@ class Player(BaseModel):
     sgp_per_category: dict = {}
     dollar_value: float = 0.0
     inflated_value: float = 0.0
+    keeper_premium: float = 0.0  # Keeper league upside/decline adjustment
     pre_bid_range: Optional[PreBidRange] = None
     breakout: Optional[BreakoutProfile] = None
+
+    # NL keeper-eligible: AL→NL transfer, keepable with $2 penalty
+    is_nl_keeper_eligible: bool = False
 
     # Draft state
     is_keeper: bool = False

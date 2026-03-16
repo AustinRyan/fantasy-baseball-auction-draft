@@ -6,27 +6,41 @@ from ..config import LeagueConfig, league_config
 from ..models.player import Player, PreBidRange
 
 
+def _is_draftable(player: Player, config: LeagueConfig) -> bool:
+    """Check if a player has enough projected playing time to be draftable."""
+    if player.is_hitter:
+        return player.hitting is not None and player.hitting.PA >= config.min_pa
+    return player.pitching is not None and player.pitching.IP >= config.min_ip
+
+
 def _get_replacement_level(
     players: dict[str, Player],
     config: LeagueConfig,
 ) -> tuple[float, float]:
     """Determine replacement-level SGP for hitters and pitchers.
 
-    Replacement level = SGP of the last draftable player at each position type.
+    Replacement level = SGP of the last player drafted at each position type.
+    Keepers already fill some roster slots, so we only need to draft enough
+    players to fill the remaining slots.
     """
     hitters = sorted(
-        [p for p in players.values() if p.is_hitter and not p.is_keeper],
+        [p for p in players.values() if p.is_hitter and not p.is_keeper and _is_draftable(p, config)],
         key=lambda p: p.sgp,
         reverse=True,
     )
     pitchers = sorted(
-        [p for p in players.values() if not p.is_hitter and not p.is_keeper],
+        [p for p in players.values() if not p.is_hitter and not p.is_keeper and _is_draftable(p, config)],
         key=lambda p: p.sgp,
         reverse=True,
     )
 
-    num_hitters = config.total_hitters_drafted
-    num_pitchers = config.total_pitchers_drafted
+    # Keepers fill some roster slots, so fewer players need to be drafted
+    keeper_hitters = sum(1 for p in players.values() if p.is_keeper and p.is_hitter)
+    keeper_pitchers = sum(1 for p in players.values() if p.is_keeper and not p.is_hitter)
+
+    # Credit ~75% of keepers as slot-fillers (some overlap positions)
+    num_hitters = max(1, config.total_hitters_drafted - int(keeper_hitters * 0.75))
+    num_pitchers = max(1, config.total_pitchers_drafted - int(keeper_pitchers * 0.75))
 
     # Replacement level is the SGP of the marginal draftable player
     hitter_replacement = hitters[num_hitters - 1].sgp if len(hitters) >= num_hitters else 0
@@ -51,26 +65,30 @@ def calculate_dollar_values(
     """
     hitter_repl, pitcher_repl = _get_replacement_level(players, config)
 
-    # Separate hitters and pitchers, sorted by SGP
+    # Separate draftable hitters and pitchers (meet min PA/IP), sorted by SGP
     hitters = sorted(
-        [p for p in players.values() if p.is_hitter],
+        [p for p in players.values() if p.is_hitter and _is_draftable(p, config)],
         key=lambda p: p.sgp,
         reverse=True,
     )
     pitchers = sorted(
-        [p for p in players.values() if not p.is_hitter],
+        [p for p in players.values() if not p.is_hitter and _is_draftable(p, config)],
         key=lambda p: p.sgp,
         reverse=True,
     )
 
-    num_hitters = config.total_hitters_drafted
-    num_pitchers = config.total_pitchers_drafted
+    # Keepers fill some roster slots
+    keeper_hitters = sum(1 for p in players.values() if p.is_keeper and p.is_hitter)
+    keeper_pitchers = sum(1 for p in players.values() if p.is_keeper and not p.is_hitter)
+
+    num_hitters_to_draft = max(1, config.total_hitters_drafted - int(keeper_hitters * 0.75))
+    num_pitchers_to_draft = max(1, config.total_pitchers_drafted - int(keeper_pitchers * 0.75))
     total_budget = config.total_budget
 
-    # Draftable players only
-    draftable_hitters = hitters[:num_hitters]
-    draftable_pitchers = pitchers[:num_pitchers]
-    total_draftable = num_hitters + num_pitchers
+    # Top draftable players
+    draftable_hitters = hitters[:num_hitters_to_draft]
+    draftable_pitchers = pitchers[:num_pitchers_to_draft]
+    total_draftable = num_hitters_to_draft + num_pitchers_to_draft
 
     # Total dollars available after $1 minimum per player
     available_dollars = total_budget - total_draftable
@@ -89,6 +107,16 @@ def calculate_dollar_values(
 
     # Calculate dollar values for all players
     for player in players.values():
+        # Fringe players below min PA/IP get $1
+        if not _is_draftable(player, config) and not player.is_keeper:
+            player.dollar_value = 1.0
+            player.inflated_value = 1.0
+            player.pre_bid_range = PreBidRange(
+                steal_below=0.7, value_below=0.9, fair_low=0.9,
+                fair_high=1.1, overpay_above=1.2, big_overpay_above=1.4,
+            )
+            continue
+
         if player.is_hitter:
             repl = hitter_repl
             dps = hitter_dps

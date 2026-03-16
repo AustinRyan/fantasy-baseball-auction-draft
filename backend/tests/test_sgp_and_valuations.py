@@ -29,7 +29,7 @@ def elite_hitter():
         positions=["OF"], is_hitter=True,
         hitting=HittingProjection(
             PA=600, AB=530, H=155, HR=45, R=105, RBI=110,
-            SB=5, CS=2, BB=65, SO=170, BA=0.292,
+            SB=5, CS=2, BB=65, SO=170, BA=0.292, OBP=0.367,
         ),
     )
 
@@ -41,7 +41,7 @@ def avg_hitter():
         positions=["1B"], is_hitter=True,
         hitting=HittingProjection(
             PA=550, AB=490, H=127, HR=18, R=65, RBI=68,
-            SB=3, CS=2, BB=50, SO=120, BA=0.259,
+            SB=3, CS=2, BB=50, SO=120, BA=0.259, OBP=0.322,
         ),
     )
 
@@ -89,13 +89,14 @@ class TestSGPHitting:
         assert sgp["R"] == pytest.approx(105 / 22.0)
         assert sgp["RBI"] == pytest.approx(110 / 22.0)
         assert sgp["SB"] == pytest.approx(5 / 8.0)
-        # BA SGP should be positive for above-average hitter
-        assert sgp["BA"] > 0
+        # OBP SGP should be positive for above-average OBP (.367 vs .320 baseline)
+        assert sgp["OBP"] > 0
 
     def test_avg_hitter_sgp(self, avg_hitter, config):
         sgp = calculate_sgp_hitting(avg_hitter, config)
-        # Below .260 BA should give slightly negative BA SGP
-        assert sgp["BA"] < 0
+        # .322 OBP is near baseline .320 — should be slightly positive
+        assert sgp["OBP"] > -0.5
+        assert sgp["OBP"] < 1.0
 
     def test_total_sgp(self, elite_hitter, config):
         calculate_player_sgp(elite_hitter, config)
@@ -139,14 +140,18 @@ class TestDollarValues:
 
         # Generate filler hitters (enough for 11 teams * 14 hitters = 154)
         for i in range(160):
+            pa = 400 - i
+            h = 90 - i // 3
+            bb = 50
             filler = Player(
                 id=f"h{i}", name=f"Hitter {i}", team="BAL",
                 positions=["OF"], is_hitter=True,
                 hitting=HittingProjection(
-                    PA=400 - i, AB=360 - i, H=90 - i // 3,
+                    PA=pa, AB=360 - i, H=h,
                     HR=max(1, 12 - i // 10), R=max(10, 50 - i // 3),
                     RBI=max(10, 50 - i // 3), SB=max(0, 5 - i // 20),
-                    BA=max(0.200, 0.260 - i * 0.0005),
+                    BB=bb, BA=max(0.200, 0.260 - i * 0.0005),
+                    OBP=(h + bb) / pa if pa > 0 else 0,
                 ),
             )
             calculate_player_sgp(filler)
@@ -211,7 +216,7 @@ class TestBreakout:
         player = Player(
             id="young", name="Young Hitter", team="NYY",
             positions=["OF"], is_hitter=True,
-            hitting=HittingProjection(BA=0.260, AB=400, H=104),
+            hitting=HittingProjection(BA=0.260, OBP=0.330, AB=400, H=104, PA=450, BB=40),
         )
         player.__dict__["_extra"] = {"age": 24, "barrel_pct": 14.0, "hard_hit_pct": 46.0}
         profile = score_breakout(player)
@@ -233,15 +238,16 @@ class TestBreakout:
 class TestCSVImport:
     def test_hitting_csv_import(self):
         clear_players()
-        csv_data = "Name,Team,Pos,PA,AB,H,HR,R,RBI,SB,BB,SO,AVG\n"
-        csv_data += "Aaron Judge,NYY,OF,600,530,155,45,105,110,5,65,170,.292\n"
-        csv_data += "Mike Trout,LAA,OF,500,440,125,30,85,80,10,55,120,.284\n"
-        csv_data += "Freddie Freeman,LAD,1B,650,570,185,25,100,95,8,70,110,.325\n"  # NL - should be filtered
+        csv_data = "Name,Team,Pos,PA,AB,H,HR,R,RBI,SB,BB,SO,AVG,OBP\n"
+        csv_data += "Aaron Judge,NYY,OF,600,530,155,45,105,110,5,65,170,.292,.367\n"
+        csv_data += "Mike Trout,LAA,OF,500,440,125,30,85,80,10,55,120,.284,.360\n"
+        csv_data += "Freddie Freeman,LAD,1B,650,570,185,25,100,95,8,70,110,.325,.392\n"  # NL - should be filtered
 
-        players = load_projections_csv(csv_data.encode())
+        players = load_projections_csv(csv_data.encode(), _persist=False)
         assert len(players) == 2  # Only AL players
         assert players[0].name == "Aaron Judge"
         assert players[0].hitting.HR == 45
+        assert players[0].hitting.OBP == pytest.approx(0.367, abs=0.001)
         assert players[1].team == "LAA"
 
     def test_pitching_csv_import(self):
@@ -250,6 +256,6 @@ class TestCSVImport:
         csv_data += "Gerrit Cole,NYY,SP,195,14,5,0,230,40,150,55,20,2.54,0.97\n"
         csv_data += "Some NL Guy,LAD,SP,180,12,7,0,190,45,160,70,22,3.50,1.14\n"
 
-        players = load_projections_csv(csv_data.encode())
+        players = load_projections_csv(csv_data.encode(), _persist=False)
         assert len(players) == 1
         assert players[0].pitching.K == 230

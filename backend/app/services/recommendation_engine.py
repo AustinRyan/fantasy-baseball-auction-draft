@@ -181,7 +181,15 @@ def get_recommendations(team_id: str) -> list:
     # Sort by combined score descending
     recommendations.sort(key=lambda x: x[0], reverse=True)
 
-    return [rec for _, rec in recommendations[:10]]
+    # Deduplicate: keep only the best slot recommendation per player
+    seen_players: set[str] = set()
+    deduped = []
+    for score, rec in recommendations:
+        if rec.player_id not in seen_players:
+            seen_players.add(rec.player_id)
+            deduped.append(rec)
+
+    return deduped[:10]
 
 
 def get_roster_needs(team_id: str) -> list:

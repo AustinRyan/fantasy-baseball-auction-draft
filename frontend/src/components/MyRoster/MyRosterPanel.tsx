@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
 import { draftApi } from '@/api/client';
 import { useDraftStore } from '@/store/draftStore';
@@ -33,13 +33,24 @@ const SLOT_ORDER = ['C', 'C', '1B', '2B', '3B', 'SS', 'MI', 'CI', 'OF', 'OF', 'O
 export default function MyRosterPanel() {
   const [roster, setRoster] = useState<RosterData | null>(null);
   const draftActive = useDraftStore((s) => s.draftActive);
+  const myTeamId = useDraftStore((s) => s.myTeamId);
+  const teamNames = useDraftStore((s) => s.teamNames);
+  const [viewTeamId, setViewTeamId] = useState(myTeamId);
   // Track drafted player count so we re-fetch immediately when a pick is recorded/undone
   const draftedCount = useDraftStore((s) => s.players.filter((p) => p.is_drafted).length);
+
+  const isMyTeam = viewTeamId === myTeamId;
+
+  const cycleTeam = (direction: 1 | -1) => {
+    const idx = teamNames.findIndex((t) => t.id === viewTeamId);
+    const next = (idx + direction + teamNames.length) % teamNames.length;
+    setViewTeamId(teamNames[next].id);
+  };
 
   useEffect(() => {
     const fetchRoster = async () => {
       try {
-        const res = await draftApi.getMyRoster();
+        const res = await draftApi.getTeamRoster(viewTeamId);
         setRoster(res.data);
       } catch { /* not available */ }
     };
@@ -48,7 +59,7 @@ export default function MyRosterPanel() {
       const interval = setInterval(fetchRoster, 5000);
       return () => clearInterval(interval);
     }
-  }, [draftActive, draftedCount]);
+  }, [draftActive, draftedCount, viewTeamId]);
 
   const slots: RosterSlot[] = roster?.slots ?? SLOT_ORDER.map((s) => ({ slot: s, player_name: null, price: null }));
   const budgetTotal = roster?.budget_total ?? 270;
@@ -67,7 +78,19 @@ export default function MyRosterPanel() {
   return (
     <div className="wr-card">
       <div className="wr-card-header">
-        <span className="wr-title">My Roster</span>
+        <div className="flex items-center gap-2">
+          <button onClick={() => cycleTeam(-1)} className="wr-btn wr-btn-ghost !p-0.5"><ChevronLeft className="h-4 w-4" /></button>
+          <select
+            value={viewTeamId}
+            onChange={(e) => setViewTeamId(e.target.value)}
+            className="wr-select text-sm font-display tracking-wider min-w-[120px]"
+          >
+            {teamNames.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}{t.id === myTeamId ? ' (You)' : ''}</option>
+            ))}
+          </select>
+          <button onClick={() => cycleTeam(1)} className="wr-btn wr-btn-ghost !p-0.5"><ChevronRight className="h-4 w-4" /></button>
+        </div>
         <span className="font-mono text-xs text-text-muted">{slots.length - emptySlots}/{slots.length}</span>
       </div>
 
@@ -95,8 +118,8 @@ export default function MyRosterPanel() {
           </div>
         </div>
 
-        {/* 900 IP warning */}
-        {pitcherStats.filled < pitcherStats.total && (
+        {/* 900 IP warning (own team only) */}
+        {isMyTeam && pitcherStats.filled < pitcherStats.total && (
           <div className="flex items-center gap-2 rounded-sm border border-overpay/30 bg-overpay/5 px-3 py-2 text-[11px] font-semibold text-overpay">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
             {pitcherStats.filled}/{pitcherStats.total} pitchers — ensure 900 IP min

@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Query
 
 from ..config import league_config
-from ..services.breakout_predictor import calculate_all_breakouts
+from ..services.breakout_predictor import calculate_all_breakouts, apply_keeper_premiums
 from ..services.keeper_manager import calculate_inflation, link_keepers_to_players
 from ..services.projection_loader import get_players
 from ..services.sgp_calculator import calculate_all_sgp
@@ -44,8 +44,11 @@ async def calculate_valuations(inflation_rate: Optional[float] = None):
     if inflation_rate != 1.0:
         calculate_dollar_values(players, league_config, inflation_rate=inflation_rate)
 
-    # Step 6: Breakout predictions
-    calculate_all_breakouts(players)
+    # Step 6: Breakout predictions (only for players with meaningful playing time)
+    calculate_all_breakouts(players, min_pa=league_config.min_pa, min_ip=league_config.min_ip)
+
+    # Step 7: Apply keeper league premium (breakout candidates worth more in keeper formats)
+    apply_keeper_premiums(players)
 
     hitters = [p for p in players.values() if p.is_hitter]
     pitchers = [p for p in players.values() if not p.is_hitter]
