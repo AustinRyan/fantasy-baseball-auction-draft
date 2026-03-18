@@ -183,7 +183,14 @@ def undo_pick(pick_id: str) -> DraftPick:
 
 
 def _recalculate_values() -> None:
-    """Recalculate inflation rate and all player values based on current draft state."""
+    """Recalculate inflation rate and apply to frozen base dollar values.
+
+    IMPORTANT: Base dollar_values (set during pre-draft valuation) are frozen.
+    During the draft we only recalculate the inflation multiplier and apply it.
+    We do NOT recompute replacement level or dollars-per-SGP, because removing
+    drafted players from the pool would shift every remaining player's base
+    value and cause cascading price distortions.
+    """
     players = get_players()
     if not players:
         return
@@ -196,18 +203,13 @@ def _recalculate_values() -> None:
         p.price for p in _draft_state.picks
     )
 
-    # Total value consumed: keeper dollar_values + drafted player dollar_values
-    keeper_value = sum(
-        p.dollar_value for p in players.values() if p.is_keeper
-    )
-    drafted_value = sum(
+    # Remaining value = sum of base dollar_values for undrafted, non-keeper players
+    remaining_value = sum(
         p.dollar_value for p in players.values()
-        if p.is_drafted and not p.is_keeper
+        if not p.is_drafted and not p.is_keeper
     )
-    total_value_consumed = keeper_value + drafted_value
 
     remaining_budget = total_budget - total_salary_spent
-    remaining_value = total_budget - total_value_consumed
 
     # Guard against division by zero
     if remaining_value <= 0:
@@ -217,12 +219,34 @@ def _recalculate_values() -> None:
 
     _draft_state.current_inflation_rate = round(inflation_rate, 4)
 
-    # Re-run dollar value calculation with new inflation
-    calculate_dollar_values(players, league_config, inflation_rate)
+    # Apply inflation to frozen base values (do NOT recalculate base dollar_values)
+    from ..models.player import PreBidRange
+    config = league_config
+    for player in players.values():
+        if player.dollar_value <= 1.0 and not player.is_keeper:
+            player.inflated_value = 1.0
+            continue
 
-    # Re-apply keeper premiums
+        player.inflated_value = round(player.dollar_value * inflation_rate, 1)
+
+        # Recalculate pre-bid ranges from new inflated value
+        iv = player.inflated_value
+        player.pre_bid_range = PreBidRange(
+            steal_below=round(iv * config.steal_threshold, 1),
+            value_below=round(iv * config.value_threshold, 1),
+            fair_low=round(iv * config.fair_low, 1),
+            fair_high=round(iv * config.fair_high, 1),
+            overpay_above=round(iv * config.overpay_threshold, 1),
+            big_overpay_above=round(iv * config.big_overpay_threshold, 1),
+        )
+
+    # Re-apply keeper premiums on new inflated values
     from .breakout_predictor import apply_keeper_premiums
     apply_keeper_premiums(players)
+
+    # Invalidate optimizer cache
+    from .draft_optimizer import invalidate_cache
+    invalidate_cache()
 
 
 def save_draft_state() -> str:
