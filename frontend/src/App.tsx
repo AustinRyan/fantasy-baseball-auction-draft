@@ -12,6 +12,7 @@ import {
   RotateCcw,
   Sun,
   Moon,
+  Binoculars,
 } from 'lucide-react';
 import clsx from 'clsx';
 import ProjectionUploader from '@/components/PreDraft/ProjectionUploader';
@@ -24,12 +25,14 @@ import AlertBanner from '@/components/DraftRoom/AlertBanner';
 import PlayerQueue from '@/components/DraftRoom/PlayerQueue';
 import MyRosterPanel from '@/components/MyRoster/MyRosterPanel';
 import DraftRecommendations from '@/components/MyRoster/DraftRecommendations';
+import DraftAdvisor from '@/components/DraftRoom/DraftAdvisor';
+import ScoutingBoard from '@/components/DraftRoom/ScoutingBoard';
 import TeamRosters from '@/components/Analysis/TeamRosters';
 import { valuationsApi, draftApi, exportApi, keepersApi } from '@/api/client';
 import { useDraftStore } from '@/store/draftStore';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 
-type Tab = 'pre-draft' | 'draft' | 'analysis';
+type Tab = 'pre-draft' | 'draft' | 'scouting' | 'analysis';
 
 function Toast({ message, onClose }: { message: string; onClose: () => void }) {
   useEffect(() => {
@@ -73,6 +76,7 @@ function App() {
   }, [darkMode]);
 
   const setTeamNames = useDraftStore((s) => s.setTeamNames);
+  const fetchScoutingBoard = useDraftStore((s) => s.fetchScoutingBoard);
 
   // Load existing data on mount
   useEffect(() => {
@@ -101,8 +105,10 @@ function App() {
           }
         }
       } catch { /* not ready */ }
+      // Load scouting board
+      fetchScoutingBoard();
     })();
-  }, [setPlayers, setTeamNames, setDraftActive, setLastPicks]);
+  }, [setPlayers, setTeamNames, setDraftActive, setLastPicks, fetchScoutingBoard]);
 
   const fetchValues = useCallback(async () => {
     try {
@@ -214,7 +220,8 @@ function App() {
     () => ({
       'mod+1': () => setActiveTab('pre-draft'),
       'mod+2': () => setActiveTab('draft'),
-      'mod+3': () => setActiveTab('analysis'),
+      'mod+3': () => setActiveTab('scouting'),
+      'mod+4': () => setActiveTab('analysis'),
       'mod+s': () => handleSaveDraft(),
       'escape': () => setSelectedPlayer(null),
     }),
@@ -248,7 +255,8 @@ function App() {
   const tabs: { id: Tab; label: string; icon: React.ReactNode; shortcut: string }[] = [
     { id: 'pre-draft', label: 'Pre-Draft', icon: <LayoutDashboard className="h-4 w-4" />, shortcut: '1' },
     { id: 'draft', label: 'Draft Room', icon: <Gavel className="h-4 w-4" />, shortcut: '2' },
-    { id: 'analysis', label: 'Analysis', icon: <BarChart3 className="h-4 w-4" />, shortcut: '3' },
+    { id: 'scouting', label: 'Scouting', icon: <Binoculars className="h-4 w-4" />, shortcut: '3' },
+    { id: 'analysis', label: 'Analysis', icon: <BarChart3 className="h-4 w-4" />, shortcut: '4' },
   ];
 
   return (
@@ -396,12 +404,14 @@ function App() {
               </div>
               <div className="w-full lg:w-2/5 space-y-4">
                 <MyRosterPanel />
-                <DraftRecommendations />
+                <DraftAdvisor />
                 <PlayerQueue />
               </div>
             </div>
           </div>
         )}
+
+        {activeTab === 'scouting' && <ScoutingBoard />}
 
         {activeTab === 'analysis' && (
           <div className="animate-enter">

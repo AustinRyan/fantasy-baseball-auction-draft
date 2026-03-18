@@ -53,9 +53,22 @@ export const draftApi = {
   getMyRoster: () => api.get('/draft/my-roster'),
   getTeamRoster: (teamId: string) => api.get(`/draft/team/${teamId}/roster`),
   getRecommendations: () => api.get('/draft/recommendations'),
+  getOptimizer: () => api.get('/draft/optimizer'),
   getAlerts: () => api.get('/draft/alerts'),
   save: () => api.post('/draft/save'),
   load: () => api.post('/draft/load'),
+};
+
+export const scoutingApi = {
+  getBoard: () => api.get('/draft/scouting-board'),
+  addCandidate: (data: {
+    player_id: string; signal: string;
+    target_bid_low: number; target_bid_high: number; narrative: string;
+  }) => api.post('/draft/scouting-board', data),
+  updateCandidate: (playerId: string, data: Record<string, unknown>) =>
+    api.put(`/draft/scouting-board/${playerId}`, data),
+  removeCandidate: (playerId: string) =>
+    api.delete(`/draft/scouting-board/${playerId}`),
 };
 
 export const exportApi = {

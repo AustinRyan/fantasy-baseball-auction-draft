@@ -19,7 +19,21 @@ from ..services.recommendation_engine import (
     get_recommendations as _get_recommendations,
     get_roster_needs as _get_roster_needs,
 )
+from ..services.draft_optimizer import (
+    get_optimizer_results as _get_optimizer,
+    analyze_categories as _analyze_categories,
+    calculate_budget_plan as _get_budget_plan,
+    calculate_position_scarcity as _get_scarcity,
+)
 from ..services.keeper_manager import get_league
+from ..services.scouting_service import (
+    get_board_with_players as _get_board,
+    add_candidate as _add_candidate,
+    update_candidate as _update_candidate,
+    remove_candidate as _remove_candidate,
+)
+from ..models.scouting import ScoutingCandidate, ScoutingCandidateUpdate, ScoutingBoardEntry
+from ..services.projection_loader import get_player as _get_player
 
 router = APIRouter()
 
@@ -214,6 +228,54 @@ async def get_team_roster(team_id: str):
     }
 
 
+@router.get("/optimizer")
+async def get_optimizer():
+    """Get full optimizer analysis: categories, smart recs, budget, scarcity."""
+    league = get_league()
+    user_team = next((t for t in league.teams if t.is_user), None)
+    if user_team is None:
+        user_team = league.get_team("team_1")
+    if user_team is None:
+        raise HTTPException(status_code=404, detail="No user team found")
+    return _get_optimizer(user_team.id)
+
+
+@router.get("/categories")
+async def get_categories():
+    """Get category standings analysis for user's team."""
+    league = get_league()
+    user_team = next((t for t in league.teams if t.is_user), None)
+    if user_team is None:
+        user_team = league.get_team("team_1")
+    if user_team is None:
+        raise HTTPException(status_code=404, detail="No user team found")
+    return _analyze_categories(user_team.id)
+
+
+@router.get("/budget-plan")
+async def get_budget_plan():
+    """Get budget pacing and per-position spend suggestions."""
+    league = get_league()
+    user_team = next((t for t in league.teams if t.is_user), None)
+    if user_team is None:
+        user_team = league.get_team("team_1")
+    if user_team is None:
+        raise HTTPException(status_code=404, detail="No user team found")
+    return _get_budget_plan(user_team.id)
+
+
+@router.get("/position-scarcity")
+async def get_position_scarcity():
+    """Get position scarcity analysis."""
+    league = get_league()
+    user_team = next((t for t in league.teams if t.is_user), None)
+    if user_team is None:
+        user_team = league.get_team("team_1")
+    if user_team is None:
+        raise HTTPException(status_code=404, detail="No user team found")
+    return _get_scarcity(user_team.id)
+
+
 @router.post("/save")
 async def save_state():
     """Save draft state to JSON file."""
@@ -234,6 +296,42 @@ async def load_state():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return state.model_dump(mode="json")
+
+
+# ── Scouting Board ───────────────────────────────────────────
+
+
+@router.get("/scouting-board")
+def get_scouting_board():
+    return _get_board()
+
+
+@router.post("/scouting-board", status_code=201)
+def add_scouting_candidate(body: ScoutingCandidate):
+    if _get_player(body.player_id) is None:
+        raise HTTPException(404, f"Player {body.player_id} not found in projections")
+    try:
+        return _add_candidate(
+            body.player_id, body.signal,
+            body.target_bid_low, body.target_bid_high, body.narrative,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.put("/scouting-board/{player_id}")
+def update_scouting_candidate(player_id: str, body: ScoutingCandidateUpdate):
+    try:
+        return _update_candidate(player_id, **body.model_dump(exclude_none=True))
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@router.delete("/scouting-board/{player_id}")
+def remove_scouting_candidate(player_id: str):
+    if not _remove_candidate(player_id):
+        raise HTTPException(404, f"Player {player_id} not on scouting board")
+    return {"removed": True}
 
 
 async def websocket_endpoint(websocket: WebSocket) -> None:

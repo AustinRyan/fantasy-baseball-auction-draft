@@ -460,6 +460,12 @@ body {
 .breakout-positive { background: color-mix(in srgb, var(--color-steal) 10%, transparent); color: var(--color-steal); border: 1px solid color-mix(in srgb, var(--color-steal) 20%, transparent); }
 .breakout-negative { background: color-mix(in srgb, var(--color-big-overpay) 10%, transparent); color: var(--color-big-overpay); border: 1px solid color-mix(in srgb, var(--color-big-overpay) 20%, transparent); }
 
+/* Scouting signal badges */
+.signal-breakout { background: color-mix(in srgb, var(--color-steal) 12%, transparent); color: var(--color-steal); border: 1px solid color-mix(in srgb, var(--color-steal) 25%, transparent); }
+.signal-bounce-back { background: color-mix(in srgb, #3b82f6 12%, transparent); color: #3b82f6; border: 1px solid color-mix(in srgb, #3b82f6 25%, transparent); }
+.signal-value-trap { background: color-mix(in srgb, #f59e0b 12%, transparent); color: #f59e0b; border: 1px solid color-mix(in srgb, #f59e0b 25%, transparent); }
+.signal-overpay-risk { background: color-mix(in srgb, var(--color-big-overpay) 12%, transparent); color: var(--color-big-overpay); border: 1px solid color-mix(in srgb, var(--color-big-overpay) 25%, transparent); }
+
 /* Price range bar */
 .price-bar {
   height: 6px;
