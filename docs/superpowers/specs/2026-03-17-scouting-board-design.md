@@ -19,14 +19,43 @@ A dedicated "Scouting" tab in the draft room with full scouting report cards for
 
 New file: `backend/app/models/scouting.py`
 
+All backend files must include `from __future__ import annotations` for Python 3.9 compatibility.
+
 ```python
+from __future__ import annotations
+from typing import Literal
+from pydantic import BaseModel
+
+SignalType = Literal["breakout", "bounce_back", "value_trap", "overpay_risk"]
+
 class ScoutingCandidate(BaseModel):
+    """Stored in scouting_board.json. Does not contain player projection data."""
     player_id: str
-    signal: Literal["breakout", "bounce_back", "value_trap", "overpay_risk"]
+    signal: SignalType
+    target_bid_low: float  # Min of your target bid range (0 for "avoid" players)
+    target_bid_high: float  # Max you would pay (the ceiling)
+    narrative: str
+
+class ScoutingBoardEntry(BaseModel):
+    """GET response model: scouting data merged with full player data."""
+    player_id: str
+    signal: SignalType
     target_bid_low: float
     target_bid_high: float
     narrative: str
+    player: dict  # Full serialized Player (same shape as /valuations/results)
 ```
+
+### Target Bid Conventions
+
+For "buy" signals (Breakout, Bounce-Back), target_bid_low/high represent the range you want to pay:
+- `target_bid_low: 3, target_bid_high: 5` means "bid $3-5"
+
+For "avoid" signals (Value Trap, Overpay Risk), target_bid_high represents your ceiling:
+- "Let go >$20" → `target_bid_low: 0, target_bid_high: 20`
+- "Don't bid >$3" → `target_bid_low: 0, target_bid_high: 3`
+
+The UI renders these differently based on signal type.
 
 ### Persistence
 
@@ -48,28 +77,48 @@ Loaded on startup alongside draft state. Saved on every mutation.
 
 ### New Service
 
-New file: `backend/app/services/scouting_service.py`
+New file: `backend/app/services/scouting_service.py` (must include `from __future__ import annotations`)
 
 Functions:
 - `get_scouting_board() -> list[ScoutingCandidate]` - Return all candidates
-- `add_candidate(player_id, signal, target_bid_low, target_bid_high, narrative) -> ScoutingCandidate` - Add player to board
-- `update_candidate(player_id, signal?, target_bid_low?, target_bid_high?, narrative?) -> ScoutingCandidate` - Update fields
-- `remove_candidate(player_id) -> bool` - Remove from board
+- `get_board_with_players() -> list[ScoutingBoardEntry]` - Return candidates merged with player data from projection store. Skips entries where player_id is not found in the store (stale/deleted players).
+- `add_candidate(player_id, signal, target_bid_low, target_bid_high, narrative) -> ScoutingCandidate` - Add player to board. Raises ValueError if player_id already on board.
+- `update_candidate(player_id, signal?, target_bid_low?, target_bid_high?, narrative?) -> ScoutingCandidate` - Update fields. Raises ValueError if player_id not on board.
+- `remove_candidate(player_id) -> bool` - Remove from board. Returns False if not found.
 - `save_board()` / `load_board()` - JSON persistence
-- `get_default_board() -> list[ScoutingCandidate]` - Return pre-populated research candidates (called if no saved board exists)
+- `get_default_board() -> list[ScoutingCandidate]` - Return pre-populated research candidates (called if no saved board exists on first load)
 
 ### API Endpoints
 
 Added to draft router (`backend/app/routers/draft.py`):
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/draft/scouting-board` | GET | Get all scouting candidates (merged with player data from store) |
-| `/draft/scouting-board` | POST | Add player to board `{player_id, signal, target_bid_low, target_bid_high, narrative}` |
-| `/draft/scouting-board/{player_id}` | PUT | Update signal, narrative, or target bid |
-| `/draft/scouting-board/{player_id}` | DELETE | Remove player from board |
+| Endpoint | Method | Response | Error Cases |
+|----------|--------|----------|-------------|
+| `/draft/scouting-board` | GET | `list[ScoutingBoardEntry]` | 200 always (empty list if no board) |
+| `/draft/scouting-board` | POST | `ScoutingCandidate` | 400 if player already on board, 404 if player_id not in store |
+| `/draft/scouting-board/{player_id}` | PUT | `ScoutingCandidate` | 404 if player_id not on board |
+| `/draft/scouting-board/{player_id}` | DELETE | `{"removed": true}` | 404 if player_id not on board |
 
-GET response merges scouting data with full player data:
+POST request body:
+```json
+{
+  "player_id": "fg_12345",
+  "signal": "breakout",
+  "target_bid_low": 3.0,
+  "target_bid_high": 5.0,
+  "narrative": "Spring training: .538 AVG..."
+}
+```
+
+PUT request body (all fields optional):
+```json
+{
+  "signal": "bounce_back",
+  "narrative": "Updated scouting note..."
+}
+```
+
+GET response (`list[ScoutingBoardEntry]`):
 ```json
 [
   {
@@ -106,6 +155,8 @@ Add "Scouting" tab to App.tsx tab navigation, between "Draft Room" and "Analysis
 ```
 
 Keyboard shortcut: `Mod+3` for Scouting, shift existing Analysis to `Mod+4`.
+
+Update the `Tab` type union in App.tsx: add `'scouting'` to `type Tab = 'pre-draft' | 'draft' | 'scouting' | 'analysis'`. Update the `tabs` array with the new entry and shifted shortcut hints.
 
 ### New Component
 
@@ -160,42 +211,56 @@ Card sections:
 1. **Header row**: Signal badge (colored pill), player name, team, position badges, target bid range
 2. **Stats row**: Projected stat line (R/HR/RBI/SB/OBP or W/SV/K/ERA/WHIP), projected dollar value, inflated value, price range bar (reuse existing DraftBoard visualization), breakout label + score
 3. **Narrative**: Multi-line text block with the scouting report. Clicking shows an edit textarea; blur/enter saves via PUT endpoint.
-4. **Action row**: Queue button (star toggle via `toggleWatchlist`), Target button (sets `selectedPlayer`), Remove button (DELETE endpoint + confirmation)
+4. **Action row**: Queue button (star toggle via `toggleWatchlist`), Target button (sets `selectedPlayer`), Remove button (DELETE endpoint + `window.confirm()` before removal)
 
 ### Add Player Modal
 
-Triggered by "+ Add Player" button in header. Simple modal:
+Inlined in `ScoutingBoard.tsx` (no separate component file -- it's a simple form overlay). Triggered by "+ Add Player" button in header:
 - Player search input (same autocomplete as BidInput, filtered to non-scouted available players)
 - Signal type dropdown (4 options)
 - Target bid low/high inputs
 - Narrative textarea
 - "Add" button → POST endpoint
+- Close on backdrop click or Escape
 
 ### Zustand Store Additions
 
 Add to `draftStore.ts`:
 
 ```typescript
+type SignalType = "breakout" | "bounce_back" | "value_trap" | "overpay_risk";
+
+interface ScoutingEntry {
+  player_id: string;
+  signal: SignalType;
+  target_bid_low: number;
+  target_bid_high: number;
+  narrative: string;
+  player: Player;  // merged from backend GET response
+}
+
+interface NewScoutingCandidate {
+  player_id: string;
+  signal: SignalType;
+  target_bid_low: number;
+  target_bid_high: number;
+  narrative: string;
+}
+
 // New state
 scoutingBoard: ScoutingEntry[];
+scoutingLoading: boolean;
 
 // New actions
 fetchScoutingBoard: () => Promise<void>;
 addScoutingCandidate: (data: NewScoutingCandidate) => Promise<void>;
-updateScoutingCandidate: (playerId: string, data: Partial<ScoutingCandidate>) => Promise<void>;
+updateScoutingCandidate: (playerId: string, data: Partial<NewScoutingCandidate>) => Promise<void>;
 removeScoutingCandidate: (playerId: string) => Promise<void>;
 ```
 
-```typescript
-interface ScoutingEntry {
-  player_id: string;
-  signal: "breakout" | "bounce_back" | "value_trap" | "overpay_risk";
-  target_bid_low: number;
-  target_bid_high: number;
-  narrative: string;
-  player: Player;  // merged from player store
-}
-```
+**Draft state sync:** When `markPlayerDrafted()` fires (from WebSocket pick event or manual pick recording), update the corresponding `scoutingBoard` entry's `player.is_drafted` locally. No need to re-fetch the scouting board -- just mutate the nested player object in place.
+
+**Initial fetch:** Call `fetchScoutingBoard()` in the App.tsx `useEffect` on mount, alongside the existing `fetchValues()` and `fetchTeams()` calls.
 
 ### API Client Additions
 
@@ -204,9 +269,9 @@ Add to `client.ts`:
 ```typescript
 scoutingApi: {
   getBoard: () => axios.get('/draft/scouting-board'),
-  addCandidate: (data) => axios.post('/draft/scouting-board', data),
-  updateCandidate: (playerId, data) => axios.put(`/draft/scouting-board/${playerId}`, data),
-  removeCandidate: (playerId) => axios.delete(`/draft/scouting-board/${playerId}`),
+  addCandidate: (data: NewScoutingCandidate) => axios.post('/draft/scouting-board', data),
+  updateCandidate: (playerId: string, data: Partial<NewScoutingCandidate>) => axios.put(`/draft/scouting-board/${playerId}`, data),
+  removeCandidate: (playerId: string) => axios.delete(`/draft/scouting-board/${playerId}`),
 }
 ```
 
@@ -262,13 +327,23 @@ scoutingApi: {
 
 Cards use existing design system:
 - `wr-card` base with `wr-card-body`
-- Signal badges: colored pills using new CSS classes (`signal-breakout`, `signal-bounce-back`, `signal-value-trap`, `signal-overpay-risk`)
+- Signal badges: colored pills using new CSS classes (`signal-breakout`, `signal-bounce-back`, `signal-value-trap`, `signal-overpay-risk`) -- defined inline via Tailwind or added to `frontend/src/index.css`
 - Position badges: existing `pos-badge` + position classes
-- Price range bar: reuse DraftBoard's bar component
+- Price range bar: extract the inline `PriceRangeBar` from DraftBoard.tsx into ScoutingCard (or duplicate the small inline logic -- it's ~10 lines)
 - Breakout labels: existing `breakout-positive` / `breakout-negative`
 - Narrative text: `text-sm text-secondary`, editable on click with `wr-input` textarea
 - Action buttons: `wr-btn-ghost` with icons
 - Drafted overlay: `opacity-40` with strikethrough
+- Loading state: spinner (same pattern as DraftAdvisor) while `scoutingLoading` is true
+- Empty state: "No scouting candidates. Click '+ Add Player' to start building your board."
+
+### Sort Behavior
+
+Default sort: grouped by signal type in order: Breakout, Bounce-Back, Value Trap, Overpay Risk (with section headers). Within each group, sorted by `target_bid_high` descending.
+
+Alternative sorts (via chips):
+- "Projected $": sorted by `player.inflated_value` descending, no grouping
+- "Target Bid": sorted by `target_bid_high` descending, no grouping
 
 ## Files Changed
 
@@ -282,8 +357,9 @@ Cards use existing design system:
 - `backend/app/routers/draft.py` - Add 4 scouting board endpoints
 - `backend/app/main.py` - Load scouting board on startup
 - `frontend/src/api/client.ts` - Add scoutingApi methods
-- `frontend/src/store/draftStore.ts` - Add scouting state + actions
-- `frontend/src/App.tsx` - Add Scouting tab + keyboard shortcut
+- `frontend/src/store/draftStore.ts` - Add ScoutingEntry/NewScoutingCandidate types, scouting state + actions, update markPlayerDrafted to sync scouting board
+- `frontend/src/App.tsx` - Add Scouting tab, update Tab type union, update keyboard shortcuts (Mod+3 = Scouting, Mod+4 = Analysis), add fetchScoutingBoard to useEffect
+- `frontend/src/index.css` - Add signal-breakout, signal-bounce-back, signal-value-trap, signal-overpay-risk classes (if not using inline Tailwind)
 
 ## Not In Scope
 - Auto-suggestion of candidates based on signals
