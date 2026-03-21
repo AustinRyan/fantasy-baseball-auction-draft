@@ -114,6 +114,77 @@ import pathlib
 import json as _json_mod
 _DATA_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "data" / "projections"
 _NL_KEEPER_FILE = _DATA_DIR.parent / "draft_state" / "nl_keeper_eligible.json"
+_POSITION_OVERRIDES_FILE = _DATA_DIR.parent / "draft_state" / "position_overrides.json"
+
+
+# ---------------------------------------------------------------------------
+# Position overrides  (league-specific eligibility rules)
+# ---------------------------------------------------------------------------
+
+def _load_position_overrides() -> dict[str, list[str]]:
+    """Load position overrides from JSON. Returns {player_id: [positions]}."""
+    if _POSITION_OVERRIDES_FILE.exists():
+        with open(_POSITION_OVERRIDES_FILE) as f:
+            return _json_mod.load(f)
+    return {}
+
+
+def _save_position_overrides(overrides: dict[str, list[str]]) -> None:
+    _POSITION_OVERRIDES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(_POSITION_OVERRIDES_FILE, "w") as f:
+        _json_mod.dump(overrides, f, indent=2)
+
+
+def apply_position_overrides() -> int:
+    """Apply saved position overrides to in-memory players. Returns count."""
+    overrides = _load_position_overrides()
+    applied = 0
+    for pid, positions in overrides.items():
+        player = _players.get(pid)
+        if player is not None:
+            player.positions = positions
+            player.is_hitter = is_hitter(positions)
+            applied += 1
+    return applied
+
+
+def set_player_positions(player_id: str, positions: list[str]) -> Player:
+    """Update a player's positions and persist the override."""
+    player = _players.get(player_id)
+    if player is None:
+        raise ValueError(f"Player '{player_id}' not found")
+
+    player.positions = positions
+    player.is_hitter = is_hitter(positions)
+
+    # Persist
+    overrides = _load_position_overrides()
+    overrides[player_id] = positions
+    _save_position_overrides(overrides)
+
+    return player
+
+
+def get_position_overrides() -> dict[str, dict]:
+    """Return current overrides with player names for display."""
+    overrides = _load_position_overrides()
+    result = {}
+    for pid, positions in overrides.items():
+        player = _players.get(pid)
+        result[pid] = {
+            "player_id": pid,
+            "name": player.name if player else pid,
+            "positions": positions,
+        }
+    return result
+
+
+def remove_position_override(player_id: str) -> None:
+    """Remove an override and restore original positions (requires re-upload)."""
+    overrides = _load_position_overrides()
+    if player_id in overrides:
+        del overrides[player_id]
+        _save_position_overrides(overrides)
 
 
 STATCAST_HITTER_MAP = {
@@ -758,7 +829,11 @@ def _save_nl_players():
 
 
 def load_nl_keeper_players() -> int:
-    """Load NL keeper-eligible players from JSON. Called on startup."""
+    """Load NL keeper-eligible players from JSON. Called on startup.
+
+    Adds players to pool WITHOUT recalculating full valuations —
+    the startup pipeline in main.py handles that after all data is loaded.
+    """
     if not _NL_KEEPER_FILE.exists():
         return 0
 
@@ -770,12 +845,57 @@ def load_nl_keeper_players() -> int:
         # Skip if already loaded (by name match)
         if any(p.name == entry["name"] and p.is_nl_keeper_eligible for p in _players.values()):
             continue
-        add_nl_keeper_player(
+
+        # Build player without triggering full recalc
+        import uuid
+        player_id = f"nl_{uuid.uuid4().hex[:8]}"
+        stats = entry.get("stats", {})
+        positions = entry.get("positions", [])
+        is_hitter = not any(p in ("SP", "RP", "P") for p in positions)
+
+        player = Player(
+            id=player_id,
             name=entry["name"],
-            team=entry["team"],
-            positions=entry["positions"],
-            stats=entry.get("stats", {}),
+            team=entry.get("team", "FA"),
+            positions=positions,
+            is_hitter=is_hitter,
+            is_nl_keeper_eligible=True,
         )
+
+        if is_hitter:
+            pa = int(stats.get("PA", 0) or 0)
+            ab = int(stats.get("AB", 0) or 0)
+            h = int(stats.get("H", 0) or 0)
+            bb = int(stats.get("BB", 0) or 0)
+            ba = float(stats.get("AVG", 0) or stats.get("BA", 0) or 0)
+            obp = float(stats.get("OBP", 0) or 0)
+            if obp == 0 and pa > 0:
+                obp = (h + bb) / pa
+            if ba == 0 and ab > 0:
+                ba = h / ab
+            from ..models.player import HittingProjection
+            player.hitting = HittingProjection(
+                PA=pa, AB=ab, H=h, HR=int(stats.get("HR", 0) or 0),
+                R=int(stats.get("R", 0) or 0), RBI=int(stats.get("RBI", 0) or 0),
+                SB=int(stats.get("SB", 0) or 0), BB=bb, BA=ba, OBP=obp,
+                SO=int(stats.get("SO", 0) or 0),
+            )
+        else:
+            from ..models.player import PitchingProjection
+            player.pitching = PitchingProjection(
+                IP=float(stats.get("IP", 0) or 0),
+                W=int(stats.get("W", 0) or 0),
+                SV=int(stats.get("SV", 0) or 0),
+                K=int(stats.get("K", 0) or stats.get("SO", 0) or 0),
+                ERA=float(stats.get("ERA", 0) or 0),
+                WHIP=float(stats.get("WHIP", 0) or 0),
+                BB=int(stats.get("BB", 0) or 0),
+                H=int(stats.get("H", 0) or 0),
+                ER=int(stats.get("ER", 0) or 0),
+                HR=int(stats.get("HR", 0) or 0),
+            )
+
+        _players[player.id] = player
         loaded += 1
 
     logger.info(f"Loaded {loaded} NL keeper-eligible players")

@@ -55,6 +55,8 @@ export const draftApi = {
   getRecommendations: () => api.get('/draft/recommendations'),
   getOptimizer: () => api.get('/draft/optimizer'),
   getAlerts: () => api.get('/draft/alerts'),
+  checkFit: (teamId: string, playerId: string) =>
+    api.get(`/draft/check-fit/${teamId}/${playerId}`),
   save: () => api.post('/draft/save'),
   load: () => api.post('/draft/load'),
 };

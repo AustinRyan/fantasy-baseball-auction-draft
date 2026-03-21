@@ -3,6 +3,7 @@ import { Search, Star, ChevronDown, ChevronUp, X, Crosshair, Eye, EyeOff, Newspa
 import clsx from 'clsx';
 import { useDraftStore } from '@/store/draftStore';
 import { projectionsApi } from '@/api/client';
+import { getEligibleSlots } from '@/utils/positionEligibility';
 import type { Player } from '@/store/draftStore';
 
 interface NewsArticle {
@@ -27,7 +28,7 @@ interface PlayerNews {
   error?: string;
 }
 
-const POSITIONS_HITTERS = ['C', '1B', '2B', '3B', 'SS', 'OF'];
+const POSITIONS_HITTERS = ['C', '1B', '2B', '3B', 'SS', 'OF', 'MI', 'CI', 'U'];
 const POSITIONS_PITCHERS = ['SP', 'RP'];
 const ALL_POSITIONS = [...POSITIONS_HITTERS, ...POSITIONS_PITCHERS];
 
@@ -161,7 +162,7 @@ function PlayerCard({
           <div>
             <div className="font-display text-base tracking-wider text-text-primary leading-tight">{player.name}</div>
             <div className="text-[11px] text-text-muted font-mono">
-              {player.team} &mdash; {player.positions.join(', ')}
+              {player.team} &mdash; {getEligibleSlots(player.positions).join(', ')}
             </div>
           </div>
         </div>
@@ -186,6 +187,29 @@ function PlayerCard({
               </span>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Projected stats */}
+      <div className="px-3 pb-2">
+        <div className="flex items-center justify-between font-mono text-[11px]">
+          {player.is_hitter && player.hitting ? (
+            <>
+              <span className="text-text-secondary">{player.hitting.R}<span className="text-text-muted text-[9px]"> R</span></span>
+              <span className="text-text-secondary">{player.hitting.HR}<span className="text-text-muted text-[9px]"> HR</span></span>
+              <span className="text-text-secondary">{player.hitting.RBI}<span className="text-text-muted text-[9px]"> RBI</span></span>
+              <span className="text-text-secondary">{player.hitting.SB}<span className="text-text-muted text-[9px]"> SB</span></span>
+              <span className="text-text-secondary">{player.hitting.OBP.toFixed(3)}<span className="text-text-muted text-[9px]"> OBP</span></span>
+            </>
+          ) : !player.is_hitter && player.pitching ? (
+            <>
+              <span className="text-text-secondary">{player.pitching.W}<span className="text-text-muted text-[9px]"> W</span></span>
+              <span className="text-text-secondary">{player.pitching.SV}<span className="text-text-muted text-[9px]"> SV</span></span>
+              <span className="text-text-secondary">{player.pitching.K}<span className="text-text-muted text-[9px]"> K</span></span>
+              <span className="text-text-secondary">{player.pitching.ERA.toFixed(2)}<span className="text-text-muted text-[9px]"> ERA</span></span>
+              <span className="text-text-secondary">{player.pitching.WHIP.toFixed(2)}<span className="text-text-muted text-[9px]"> WHIP</span></span>
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -374,7 +398,7 @@ export default function DraftBoard() {
       ? players.filter((p) => p.is_drafted && !p.is_keeper)
       : players.filter((p) => !p.is_drafted && !p.is_keeper);
     if (showHitters !== null) list = list.filter((p) => p.is_hitter === showHitters);
-    if (positionFilter) list = list.filter((p) => p.positions.includes(positionFilter));
+    if (positionFilter) list = list.filter((p) => getEligibleSlots(p.positions).includes(positionFilter));
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter((p) => p.name.toLowerCase().includes(q) || p.team.toLowerCase().includes(q));
@@ -503,6 +527,7 @@ export default function DraftBoard() {
               <th className="sortable" onClick={() => toggleSort('name')}>Name <SortIcon col="name" /></th>
               <th>Team</th>
               <th>Pos</th>
+              <th className="text-right text-[10px]" title="5x5 roto category projections">Stats</th>
               <th className="sortable text-right" onClick={() => toggleSort('inflated_value')} title="Inflation-adjusted auction dollar value — what you should bid">Value <SortIcon col="inflated_value" /></th>
               <th title="Price range bar: green = steal, blue = value, gray = fair, orange = overpay, red = big overpay">Range</th>
               <th className="sortable" onClick={() => toggleSort('breakout')} title="Breakout prediction from Statcast data — flags players likely to outperform (upside) or underperform (decline) their projections">Breakout <SortIcon col="breakout" /></th>
@@ -510,7 +535,7 @@ export default function DraftBoard() {
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-text-muted">{showDrafted ? 'No players drafted yet.' : 'No available players.'}</td></tr>
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-text-muted">{showDrafted ? 'No players drafted yet.' : 'No available players.'}</td></tr>
             )}
             {filtered.map((player, idx) => (
               <tr
@@ -543,10 +568,33 @@ export default function DraftBoard() {
                 </td>
                 <td className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>{player.team}</td>
                 <td>
-                  <div className="flex gap-1">
-                    {player.positions.map((p) => (
+                  <div className="flex gap-1 flex-wrap">
+                    {getEligibleSlots(player.positions).map((p) => (
                       <span key={p} className={`pos-badge ${posClass(p)}`}>{p}</span>
                     ))}
+                  </div>
+                </td>
+                <td>
+                  <div className="flex gap-2 font-mono text-[10px] text-text-muted whitespace-nowrap">
+                    {player.is_hitter && player.hitting ? (
+                      <>
+                        <span>{player.hitting.R}<span className="text-text-muted/50">r</span></span>
+                        <span>{player.hitting.HR}<span className="text-text-muted/50">hr</span></span>
+                        <span>{player.hitting.RBI}<span className="text-text-muted/50">bi</span></span>
+                        <span>{player.hitting.SB}<span className="text-text-muted/50">sb</span></span>
+                        <span>{player.hitting.OBP.toFixed(3).slice(1)}<span className="text-text-muted/50">ob</span></span>
+                      </>
+                    ) : !player.is_hitter && player.pitching ? (
+                      <>
+                        <span>{player.pitching.W}<span className="text-text-muted/50">w</span></span>
+                        <span>{player.pitching.SV}<span className="text-text-muted/50">sv</span></span>
+                        <span>{player.pitching.K}<span className="text-text-muted/50">k</span></span>
+                        <span>{player.pitching.ERA.toFixed(2)}<span className="text-text-muted/50">er</span></span>
+                        <span>{player.pitching.WHIP.toFixed(2)}<span className="text-text-muted/50">wh</span></span>
+                      </>
+                    ) : (
+                      <span>--</span>
+                    )}
                   </div>
                 </td>
                 <td className="text-right font-mono font-bold" style={{ color: player.is_drafted ? 'var(--text-secondary)' : 'var(--text-primary)' }}>

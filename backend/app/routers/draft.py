@@ -18,6 +18,7 @@ from ..services.alert_engine import get_recent_alerts as _get_recent_alerts
 from ..services.recommendation_engine import (
     get_recommendations as _get_recommendations,
     get_roster_needs as _get_roster_needs,
+    check_roster_fit as _check_roster_fit,
 )
 from ..services.draft_optimizer import (
     get_optimizer_results as _get_optimizer,
@@ -80,7 +81,7 @@ async def record_pick_endpoint(req: PickRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
     pick_data = pick.model_dump(mode="json")
-    await _broadcast({"type": "pick", "data": pick_data})
+    await _broadcast({"type": "pick_recorded", "data": pick_data})
     return pick_data
 
 
@@ -95,6 +96,12 @@ async def undo_pick_endpoint(pick_id: str):
     pick_data = pick.model_dump(mode="json")
     await _broadcast({"type": "undo", "data": pick_data})
     return pick_data
+
+
+@router.get("/check-fit/{team_id}/{player_id}")
+async def check_fit(team_id: str, player_id: str):
+    """Check if a player can fit on a team's roster given position limits."""
+    return _check_roster_fit(team_id, player_id)
 
 
 @router.get("/state")

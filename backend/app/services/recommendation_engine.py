@@ -52,44 +52,115 @@ def _get_team_roster(team: Team) -> list:
 
 
 def _assign_players_to_slots(roster_players: list) -> dict:
-    """Greedily assign roster players to their best slots.
+    """Optimally assign roster players to slots via maximum bipartite matching.
 
     Returns dict of slot_name -> list of assigned player names.
-    Uses a greedy approach: assign players to their most specific
-    (fewest alternatives) slot first.
+    Uses augmenting-path algorithm so it can re-arrange existing assignments
+    when a new player needs a slot (e.g. move Stanton from U to OF to free
+    the U slot for a third shortstop).
     """
     slot_counts = _get_roster_slot_counts()
-    slot_filled: dict[str, list[str]] = {slot: [] for slot in slot_counts}
 
-    # Build player -> eligible slots mapping
-    player_slots = []
+    # Expand multi-count slots into individual instances.
+    # e.g. C(2) → ["C", "C"], OF(5) → ["OF", "OF", "OF", "OF", "OF"]
+    expanded: list[str] = []
+    for slot, count in slot_counts.items():
+        expanded.extend([slot] * count)
+
+    n_slots = len(expanded)
+
+    # Slot priority: prefer specific slots, then combo, then utility.
+    # Ensures augmenting paths try natural positions first.
+    _PRIORITY: dict[str, int] = {
+        "C": 0, "1B": 0, "2B": 0, "3B": 0, "SS": 0, "OF": 0,
+        "MI": 1, "CI": 1,
+        "U": 2,
+        "P": 0,
+    }
+
+    # Build adjacency: for each player, sorted list of eligible expanded-slot indices
+    adjacency: list[list[int]] = []
     for player in roster_players:
-        eligible_slots = set()
+        eligible_slot_names: set[str] = set()
         for pos in player.positions:
             for slot in POSITION_SLOT_MAP.get(pos, []):
                 if slot in slot_counts:
-                    eligible_slots.add(slot)
-        player_slots.append((player, sorted(eligible_slots)))
+                    eligible_slot_names.add(slot)
+        indices = [
+            i for i, s in enumerate(expanded) if s in eligible_slot_names
+        ]
+        indices.sort(key=lambda i: _PRIORITY.get(expanded[i], 99))
+        adjacency.append(indices)
 
-    # Sort by number of eligible slots (most constrained first)
-    player_slots.sort(key=lambda x: len(x[1]))
+    # Augmenting-path maximum matching
+    match_slot: list[int] = [-1] * n_slots  # slot_idx → player_idx
 
-    for player, eligible in player_slots:
-        assigned = False
-        for slot in eligible:
-            if len(slot_filled[slot]) < slot_counts[slot]:
-                slot_filled[slot].append(player.name)
-                assigned = True
-                break
-        # If not assigned to a specific slot, player doesn't fit
+    def _augment(p_idx: int, visited: list[bool]) -> bool:
+        for s_idx in adjacency[p_idx]:
+            if visited[s_idx]:
+                continue
+            visited[s_idx] = True
+            if match_slot[s_idx] == -1 or _augment(match_slot[s_idx], visited):
+                match_slot[s_idx] = p_idx
+                return True
+        return False
 
-    return slot_filled
+    # Process most-constrained players first for efficiency
+    order = sorted(range(len(roster_players)), key=lambda i: len(adjacency[i]))
+    for p_idx in order:
+        visited = [False] * n_slots
+        _augment(p_idx, visited)
+
+    # Build result dict
+    result: dict[str, list[str]] = {slot: [] for slot in slot_counts}
+    for s_idx, p_idx in enumerate(match_slot):
+        if p_idx != -1:
+            result[expanded[s_idx]].append(roster_players[p_idx].name)
+
+    return result
 
 
 def _is_player_eligible_for_slot(player: Player, slot: str) -> bool:
     """Check if a player is eligible for a given roster slot."""
     eligible_positions = SLOT_ELIGIBLE_POSITIONS.get(slot, [])
     return any(pos in eligible_positions for pos in player.positions)
+
+
+def check_roster_fit(team_id: str, player_id: str) -> dict:
+    """Check whether adding *player_id* to *team_id*'s roster is feasible.
+
+    Returns ``{"fits": True}`` or ``{"fits": False, "warning": "..."}``
+    """
+    league = get_league()
+    team = league.get_team(team_id)
+    if team is None:
+        return {"fits": True}
+
+    new_player = get_player(player_id)
+    if new_player is None:
+        return {"fits": True}
+
+    roster = _get_team_roster(team)
+    test_roster = roster + [new_player]
+    slot_filled = _assign_players_to_slots(test_roster)
+    total_assigned = sum(len(v) for v in slot_filled.values())
+
+    if total_assigned >= len(test_roster):
+        return {"fits": True}
+
+    eligible_slots: set[str] = set()
+    for pos in new_player.positions:
+        for slot in POSITION_SLOT_MAP.get(pos, []):
+            eligible_slots.add(slot)
+
+    return {
+        "fits": False,
+        "warning": (
+            f"No roster slot available for {new_player.name} "
+            f"({', '.join(new_player.positions)}). "
+            f"All eligible slots ({', '.join(sorted(eligible_slots))}) are full."
+        ),
+    }
 
 
 def get_recommendations(team_id: str) -> list:

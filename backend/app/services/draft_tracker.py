@@ -190,6 +190,10 @@ def _recalculate_values() -> None:
     We do NOT recompute replacement level or dollars-per-SGP, because removing
     drafted players from the pool would shift every remaining player's base
     value and cause cascading price distortions.
+
+    $1 minimum players are excluded from the inflation pool since their value
+    is capped at $1 regardless.  Instead we reserve $1 per filler roster spot
+    from the remaining budget before computing inflation for meaningful players.
     """
     players = get_players()
     if not players:
@@ -203,19 +207,29 @@ def _recalculate_values() -> None:
         p.price for p in _draft_state.picks
     )
 
-    # Remaining value = sum of base dollar_values for undrafted, non-keeper players
-    remaining_value = sum(
-        p.dollar_value for p in players.values()
-        if not p.is_drafted and not p.is_keeper
-    )
-
     remaining_budget = total_budget - total_salary_spent
 
+    # How many roster spots still need filling?
+    total_roster = league_config.total_players_drafted
+    remaining_spots = max(0, total_roster - league.total_keeper_count - len(_draft_state.picks))
+
+    # Sort available players by dollar_value descending.  Only the top
+    # `remaining_spots` players realistically compete for auction dollars;
+    # everyone else is a $1 end-game fill.  Counting excess depth would
+    # dilute the inflation denominator and cause phantom deflation.
+    available = sorted(
+        [p for p in players.values() if not p.is_drafted and not p.is_keeper],
+        key=lambda p: p.dollar_value,
+        reverse=True,
+    )
+    draftable_pool = available[:remaining_spots]
+    pool_value = sum(p.dollar_value for p in draftable_pool)
+
     # Guard against division by zero
-    if remaining_value <= 0:
+    if pool_value <= 0:
         inflation_rate = 1.0
     else:
-        inflation_rate = remaining_budget / remaining_value
+        inflation_rate = remaining_budget / pool_value
 
     _draft_state.current_inflation_rate = round(inflation_rate, 4)
 

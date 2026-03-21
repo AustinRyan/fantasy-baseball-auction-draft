@@ -14,7 +14,7 @@ async def lifespan(app: FastAPI):
     import logging
     logger = logging.getLogger(__name__)
     from .services.keeper_manager import initialize_league, load_keepers
-    from .services.projection_loader import load_persisted_projections, load_nl_keeper_players
+    from .services.projection_loader import load_persisted_projections, load_nl_keeper_players, apply_position_overrides
     from .services.draft_tracker import load_draft_state
     from .services.scouting_service import load_board as load_scouting_board
     initialize_league()
@@ -27,6 +27,11 @@ async def lifespan(app: FastAPI):
     nl_loaded = load_nl_keeper_players()
     if nl_loaded:
         logger.info(f"Auto-loaded {nl_loaded} NL keeper-eligible players")
+
+    # Apply league-specific position overrides (e.g. 20-game eligibility rules)
+    pos_applied = apply_position_overrides()
+    if pos_applied:
+        logger.info(f"Applied {pos_applied} position overrides")
 
     # Auto-run full valuation pipeline (same as /api/valuations/calculate)
     # Must run AFTER all players + NL keepers loaded so pool is complete

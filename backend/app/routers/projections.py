@@ -18,6 +18,9 @@ from ..services.projection_loader import (
     load_projections_csv,
     merge_statcast_csv,
     remove_nl_keeper_player,
+    set_player_positions,
+    get_position_overrides,
+    remove_position_override,
 )
 
 router = APIRouter()
@@ -164,3 +167,37 @@ async def delete_nl_player(player_id: str):
     if not removed:
         raise HTTPException(status_code=404, detail="NL keeper-eligible player not found")
     return {"message": "Player removed", "total_in_pool": len(get_players())}
+
+
+# ── Position Overrides ──────────────────────────────────────────
+
+
+class PositionOverrideIn(BaseModel):
+    positions: list[str]
+
+
+@router.put("/player/{player_id}/positions")
+async def update_player_positions(player_id: str, body: PositionOverrideIn):
+    """Override a player's positions (league-specific eligibility)."""
+    try:
+        player = set_player_positions(player_id, body.positions)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {
+        "player_id": player.id,
+        "name": player.name,
+        "positions": player.positions,
+    }
+
+
+@router.get("/position-overrides")
+async def list_position_overrides():
+    """List all active position overrides."""
+    return get_position_overrides()
+
+
+@router.delete("/position-override/{player_id}")
+async def delete_position_override(player_id: str):
+    """Remove a position override."""
+    remove_position_override(player_id)
+    return {"removed": True}

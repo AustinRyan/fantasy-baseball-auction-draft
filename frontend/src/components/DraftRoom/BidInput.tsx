@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Undo2, CheckCircle, Search } from 'lucide-react';
+import { Undo2, CheckCircle, Search, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import { useDraftStore } from '@/store/draftStore';
 import { draftApi } from '@/api/client';
@@ -25,6 +25,8 @@ export default function BidInput({ id, onPickRecorded }: { id?: string; onPickRe
   const [lastClassification, setLastClassification] = useState<string | null>(null);
   const [playerSearch, setPlayerSearch] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
+  const [positionWarning, setPositionWarning] = useState<string | null>(null);
+  const [pendingRecord, setPendingRecord] = useState(false);
 
   useEffect(() => {
     if (selectedPlayer) {
@@ -52,7 +54,7 @@ export default function BidInput({ id, onPickRecorded }: { id?: string; onPickRe
     setShowDropdown(false);
   };
 
-  const handleRecord = async () => {
+  const doRecord = async () => {
     if (!selectedPlayer || price === '') return;
     setRecording(true);
     setLastClassification(null);
@@ -72,6 +74,33 @@ export default function BidInput({ id, onPickRecorded }: { id?: string; onPickRe
       setPrice('');
       onPickRecorded?.();
     } catch { /* error */ } finally { setRecording(false); }
+  };
+
+  const handleRecord = async () => {
+    if (!selectedPlayer || price === '') return;
+    // Check roster fit before recording
+    try {
+      const res = await draftApi.checkFit(teamId, selectedPlayer.id);
+      if (!res.data.fits) {
+        setPositionWarning(res.data.warning);
+        setPendingRecord(true);
+        return;
+      }
+    } catch {
+      // If check fails, proceed anyway
+    }
+    doRecord();
+  };
+
+  const handleOverride = () => {
+    setPositionWarning(null);
+    setPendingRecord(false);
+    doRecord();
+  };
+
+  const handleCancelWarning = () => {
+    setPositionWarning(null);
+    setPendingRecord(false);
   };
 
   const handleUndo = async () => {
@@ -194,6 +223,40 @@ export default function BidInput({ id, onPickRecorded }: { id?: string; onPickRe
                 </span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Position limit warning modal */}
+      {positionWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-[380px] rounded-lg border border-big-overpay/40 bg-panel shadow-2xl">
+            <div className="flex items-center gap-3 border-b border-border px-5 py-4">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-big-overpay/15">
+                <AlertTriangle className="h-5 w-5 text-big-overpay" />
+              </div>
+              <div>
+                <h3 className="font-display text-sm tracking-wider text-text-primary">Position Limit</h3>
+                <p className="text-[10px] text-text-muted uppercase tracking-wider">Roster Full</p>
+              </div>
+            </div>
+            <div className="px-5 py-4">
+              <p className="text-sm text-text-secondary leading-relaxed">{positionWarning}</p>
+            </div>
+            <div className="flex gap-2 border-t border-border px-5 py-3">
+              <button
+                onClick={handleCancelWarning}
+                className="wr-btn wr-btn-surface flex-1"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleOverride}
+                className="wr-btn flex-1 !border-big-overpay/30 !text-big-overpay hover:!bg-big-overpay/10"
+              >
+                Override & Draft
+              </button>
+            </div>
           </div>
         </div>
       )}
